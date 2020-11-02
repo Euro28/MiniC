@@ -44,6 +44,7 @@ FILE *pFile;
 // Lexer
 //===----------------------------------------------------------------------===//
 
+
 // The lexer returns one of these for known things.
 enum TOKEN_TYPE {
 
@@ -104,6 +105,30 @@ enum TOKEN_TYPE {
   // invalid
   INVALID = -100 // signal invalid token
 };
+
+//to my understanding there is no generic enum to string command in c++.
+const char* type_to_string(int type) {
+  switch(type) {
+    case INT_TOK: return "int";
+    case VOID_TOK: return "void";
+    case FLOAT_TOK: return "float";
+    case BOOL_TOK: return "bool";
+    case AND: return "&&";
+    case OR: return "||";
+    case PLUS: return "+";
+    case MINUS: return "-";
+    case ASTERIX: return "*";
+    case DIV: return "/";
+    case MOD: return "%";
+    case NOT: return "!";
+    case EQ: return "==";
+    case NE: return "!=";
+    case LE: return "<=";
+    case LT: return "<";
+    case GE: return ">=";
+    case GT: return ">";
+  }
+}
 
 // TOKEN struct is used to keep track of information about a token
 struct TOKEN {
@@ -399,6 +424,7 @@ class IfStatementASTnode;
 class ExpresssionStatementASTnode;
 class ReturnStatementASTnode;
 class WhileStatementASTnode;
+class ExpressionASTnode;
 
 /// ASTnode - Base class for all AST nodes.
 class ASTnode {
@@ -433,6 +459,59 @@ public:
   StatementListASTnode(std::vector<std::unique_ptr<StatementASTnode>> stmt_list)
   : Stmt_list(std::move(stmt_list)) {}
 
+  std::vector<std::unique_ptr<StatementASTnode>> getStmts() {
+    return std::move(Stmt_list);
+  }
+
+  virtual Value *codegen() override {};
+};
+
+//if there is an assignLHS there is an assign expression, if no assignLHS then its just an rval and output that
+class ExpressionASTnode : public ASTnode {
+  std::string AssignLHS;
+  std::unique_ptr<ExpressionASTnode> Assign;
+  std::unique_ptr<ASTnode> Rval;
+
+public:
+  ExpressionASTnode(std::unique_ptr<ExpressionASTnode> assign, const std::string &LHS) 
+  : Assign(std::move(assign)), AssignLHS(LHS) {}
+
+  ExpressionASTnode(std::unique_ptr<ASTnode> rval, const std::string &LHS)
+  : Rval(std::move(rval)), AssignLHS(LHS) {}
+
+  ExpressionASTnode(std::unique_ptr<ASTnode> rval)
+  : Rval(std::move(rval)) {}
+
+  std::string to_string() const override {
+    if (Rval != nullptr) {
+      return Rval->to_string();
+    }
+    std::string result = "The Expression is ";
+    result += AssignLHS;
+    result += " = ";
+    result += Assign->to_string();
+    return result;
+  }
+
+  virtual Value *codegen() override {};
+ 
+};
+
+class ExpresssionStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  bool Colon;
+
+public: 
+  ExpresssionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr) 
+  : Expr(std::move(expr)), Colon(false) {}
+
+  ExpresssionStatementASTnode(bool colon) : Colon(colon) {}
+
+  std::string to_string() const override {
+    if (!Colon)
+      return Expr->to_string();
+  }
+
   virtual Value *codegen() override {};
 };
 
@@ -445,6 +524,15 @@ class StatementASTnode : public ASTnode {
   std::unique_ptr<ReturnStatementASTnode> Return_stmt;
 
 public:
+
+  StatementASTnode(std::unique_ptr<ExpresssionStatementASTnode> expr_stmt)
+  : Expr_stmt(std::move(expr_stmt)) {}
+
+  std::string to_string() const override {
+    if (Expr_stmt != nullptr) {
+      return Expr_stmt->to_string();
+    }
+  }
   virtual Value *codegen() override {};
 };
 
@@ -485,10 +573,12 @@ public:
   VariableDeclarationASTnode(int var_type, const std::string &identifier)
   : Var_type(var_type), Identifier(identifier) {}
 
-  std::string to_string() const override {
-    std::cout << "variable decl with " << Identifier << " of type " << Var_type << std::endl;
-    return "test";
-  }
+  std::string to_string() const override {}
+
+  std::string getId() { return Identifier;}
+
+  int getType() {return Var_type;}
+
 
   virtual Value *codegen() override {};
 };
@@ -545,6 +635,19 @@ public:
   ParameterASTnode(int type, const std::string &ident) 
   : Type(type), Ident(ident) {}
 
+  std::string getType() {return type_to_string(Type);}
+
+  std::string getIdent() {return Ident;}
+
+  std::string to_string() const override {
+    std::string result;
+    result += Ident;
+    result += " '";
+    result += type_to_string(Type);
+    result += "'";
+    return result;
+  };
+
 };
 
 //Class that is associated with function/extern definition
@@ -569,6 +672,16 @@ public:
     return std::move(Params);
   }
 
+  std::string to_string() const override {
+    std::string result;
+    for (int i=0; i < Params.size(); i++) {
+      result += Params.at(i)->getType();
+      if (i != Params.size()-1)
+        result += ",";
+    }
+    return result;
+  }
+
   virtual Value *codegen() override {};
 };
 
@@ -583,6 +696,21 @@ public:
 
   std::string getIdent() {
     return Identifier;
+  }
+
+  std::string to_string() const override {
+    std::string result = "used ";
+    result += Identifier; 
+    result += " ";
+    result += type_to_string(Token_type);
+    result += " (";
+    result += Params->to_string();
+    result += ")' extern";
+    return result;
+  }
+
+  void OutputParams() {
+      std::cout << "  `-ParmVarDecl " << Params->getParams().at(0)->to_string() << std::endl;
   }
 
 
@@ -655,9 +783,6 @@ public:
   }
 };
 
-class ExpresssionStatementASTnode : public ASTnode {
-  // expr ; or just ;
-};
 
 class IfStatementASTnode : public ASTnode {
   //contains the expr which evaluates 
@@ -674,21 +799,41 @@ class ReturnStatementASTnode : public ASTnode {
   //expr which evaluates to some value which can be returned.
 };
 
-class ExpressionASTnode : public ASTnode {
-//either a expr that evaluates to some value that can be assigned
-//or an rval that evalutes to some binary expression
-};
+class ElseStatementASTnode : public ASTnode  {
+  std::unique_ptr<BlockASTnode> Block;
 
-/* include ||, &&, ==, !=, <, <=, >, >=, +, -, *, /, %*/
-class BinaryOperatorASTnode : public ASTnode {
+public:
+  virtual Value *codegen() override {};
 
-};
+  ElseStatementASTnode(std::unique_ptr<BlockASTnode> block)
+  : Block(std::move(block)) {}
 
-/*class for operaters with one argument
-these are (-)rval, !*/
-class UnaryOperatorASTnode : public ASTnode {
+  ElseStatementASTnode() {}
 
 };
+
+class BinExpressionASTnode : public ASTnode {
+  int Op;
+  std::unique_ptr<ASTnode> LHS, RHS;
+
+public:
+  BinExpressionASTnode(std::unique_ptr<ASTnode> lhs, int op, std::unique_ptr<ASTnode> rhs)
+  : LHS(std::move(lhs)), Op(op), RHS(std::move(rhs)) {}
+
+  std::string to_string() const override {
+    std::string result;
+    result += LHS->to_string();
+    result += type_to_string(Op);
+    result += RHS->to_string();
+    return result;
+  }
+  
+
+  virtual Value *codegen() override {};
+
+};
+
+
 
 /*Either a list of arguments or no arguments*/
 class ArgumentsASTnode : public ASTnode {
@@ -708,10 +853,13 @@ class IntASTnode : public ASTnode {
 
 public:
   IntASTnode(TOKEN tok, int val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override;
+  virtual Value *codegen() override {};
   // virtual std::string to_string() const override {
   // return a sting representation of this AST node
   //};
+  std::string to_string() const override {
+    return std::to_string(Val);
+  }
 };
 // FloatASTnode - class for float literals like 56.2
 class FloatASTnode : public ASTnode {
@@ -721,7 +869,7 @@ class FloatASTnode : public ASTnode {
 
 public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override;
+  virtual Value *codegen() override {};
 };
 
 // BoolASTnode - class for boolean literals, true or false.
@@ -732,30 +880,43 @@ class BoolASTnode : public ASTnode {
 
 public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override;
+  virtual Value *codegen() override {};
 };
 
+class IdentASTnode : public ASTnode {
+  std::string Name;
+  TOKEN Tok;
 
+public:
+  IdentASTnode(TOKEN tok, const std::string &name) 
+  : Tok(tok), Name(name) {}
+
+  virtual Value *codegen() override {};
+
+  std::string to_string() const override {
+    return Name;
+  }
+};
 
 
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
 //===----------------------------------------------------------------------===//
 
-void LogError(const std::string &Str) {
-  std::cerr << Str << " on line:" << lineNo << " and column: " << columnNo << std::endl;
+void LogError(TOKEN tok, const std::string &Str) {
+  std::cerr << Str << " on line:" << tok.lineNo << " and column: " << tok.columnNo << std::endl;
   std::exit(EXIT_FAILURE);
 }
 
 template<typename T>
-std::unique_ptr<T> LogErrorPtr(const std::string &Str) {
-  LogError(Str);
+std::unique_ptr<T> LogErrorPtr(TOKEN tok, const std::string &Str) {
+  LogError(CurTok, Str);
   return nullptr;
 }
 
 template<typename T>
-std::vector<std::unique_ptr<T>> LogErrorVector(const std::string &Str) {
-  LogError(Str);
+std::vector<std::unique_ptr<T>> LogErrorVector(TOKEN tok, const std::string &Str) {
+  LogError(CurTok, Str);
   return {};
 }
 
@@ -767,7 +928,7 @@ static bool match(int match, const std::string &name) {
   std::string result = "Expected ";
   result += name;
 
-  LogError(result);
+  LogError(CurTok,result);
 }
 
 
@@ -785,7 +946,19 @@ static std::unique_ptr<DeclarationASTnode> ParseDecl();
 static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl();
 static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime();
 static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls();
-
+static std::unique_ptr<ASTnode> ParseTerm();
+static std::unique_ptr<ASTnode> ParseEquiv();
+static std::unique_ptr<ASTnode> ParseEquivPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<ASTnode> ParseRvalPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<ASTnode> ParseTermPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<StatementListASTnode> ParseStmtList();
+static std::unique_ptr<ASTnode> ParseRel();
+static std::unique_ptr<ASTnode> ParseRelPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<ASTnode> ParseSubExpr();
+static std::unique_ptr<ASTnode> ParseSubExprPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<ASTnode> ParseFactor();
+static std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode>);
+static std::unique_ptr<ASTnode> ParseElement();
 
 
 static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
@@ -794,7 +967,7 @@ static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
     getNextToken(); //eat int/float/bool/void
     return result;
   } 
-  return LogErrorPtr<TypeSpecASTnode>("expected one of int, float or bool or void");
+  else return LogErrorPtr<TypeSpecASTnode>(CurTok, "expected one of int, float or bool or void");
 }
 
 static std::unique_ptr<VariableTypeASTnode> ParseVarType() {
@@ -803,7 +976,7 @@ static std::unique_ptr<VariableTypeASTnode> ParseVarType() {
     getNextToken(); //eat int/float/bool
     return result;
   } 
-  return LogErrorPtr<VariableTypeASTnode>("expected one of int, float or bool");
+  else return LogErrorPtr<VariableTypeASTnode>(CurTok,"expected one of int, float or bool");
 }
 
 // program ::= extern_list decl_list
@@ -825,7 +998,7 @@ static std::unique_ptr<ProgramASTnode> ParseProgram() {
     if (decl_list)
       return std::make_unique<ProgramASTnode>(decl_list); */
   }
-  return LogErrorPtr<ProgramASTnode>("Expected one of extern, int, void, float, bool"); //start of program must be one of listed
+  return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
 }
 
 // decl_list ::= decl decl_list_prime
@@ -861,28 +1034,325 @@ static std::unique_ptr<BlockASTnode> ParseBlock() {
   if (match(LBRA, "{")) {
     getNextToken(); //eat {
     auto local_decls = ParseLocalDecls();
-    if (local_decls)
-      std::cout << "valid" << std::endl;
+    if (local_decls) {
+      auto stmt_list = ParseStmtList();
+      if (stmt_list)
+        return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
+    }
   }
   return nullptr;
 }
 
-static std::unique_ptr<StatementASTnode> ParseStmt() {
-  if (CurTok.type == SC || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
-  CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT ) { 
-    //PREDICT(stmt ::= expr_stmt) = {";", IDENT, "-", "!", "(", int_lit, float_lit, bool_lit}
-    getNextToken(); //eat any token that belongs in PREDICT(stmt ::= expr_stmt)
-    //if (CurTok.type == SC)
 
-  } else if (CurTok.type == LBRA) { //PREDICT(stmt ::= block) = {"{"}
+static std::unique_ptr<ASTnode> ParseRval() {
+  auto term = ParseTerm();
+  if (term) {
+    auto rval_prime = ParseRvalPrime(std::move(term));
+    return rval_prime;
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseRvalPrime(std::unique_ptr<ASTnode> term1) {
+  if (CurTok.type == OR) {
+    getNextToken(); //eat ||
+    auto term2 = ParseTerm();
+    if (term2) {
+      auto node1 = std::make_unique<BinExpressionASTnode>(std::move(term1),OR, std::move(term2));
+      auto rval_prime = ParseRvalPrime(std::move(node1));
+      return rval_prime;
+    }
+  } else if (CurTok.type == SC || CurTok.type == RPAR ||
+  CurTok.type == COMMA) { //PREDICT(rval_prime -> ε) = {';', ')', ','}
+    return term1;
+  } else return LogErrorPtr<BinExpressionASTnode>(CurTok,"Expected one of '||', ';', ')', ','");
+
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseTerm() {
+  auto equiv = ParseEquiv();
+  if (equiv) {
+    auto term_prime = ParseTermPrime(std::move(equiv));
+    return term_prime;
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseTermPrime(std::unique_ptr<ASTnode> equiv1) {
+  if (CurTok.type == AND) {
+    getNextToken(); //eat &&
+    auto equiv2 = ParseEquiv();
+    if (equiv2) {
+      auto node1 = std::make_unique<BinExpressionASTnode>(std::move(equiv1), AND, std::move(equiv2));
+      auto term_prime = ParseTermPrime(std::move(node1));
+      return term_prime;
+    }
+  } else if (CurTok.type == OR || CurTok.type == SC ||
+  CurTok.type == RPAR || CurTok.type == COMMA) { //PREDICT(term_prime ::= ε) = {'||', ';', ')', ','}
+    return equiv1;
+  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '&&', '||',';', ')', ','");
+
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseEquiv() {
+  auto rel = ParseRel();
+  if (rel) {
+    auto equiv_prime = ParseEquivPrime(std::move(rel));
+    return equiv_prime;
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseEquivPrime(std::unique_ptr<ASTnode> rel1) {
+  if (CurTok.type == EQ || CurTok.type == NE) {
+    int Op = CurTok.type;
+    getNextToken(); // eat one of '!=', '=='
+    auto rel2 = ParseRel();
+    if (rel2) {
+      auto node2 = std::make_unique<BinExpressionASTnode>(std::move(rel1),Op, std::move(rel2));
+      auto equiv_prime = ParseEquivPrime(std::move(node2));
+      return equiv_prime;
+    }
+  }
+  else if (CurTok.type == OR || CurTok.type == AND || CurTok.type == SC
+  || CurTok.type == RPAR || CurTok.type == COMMA) { //PREDICT(equiv_prime ::= ε) = {'||', '&&', ';', ')', ','}
+    return rel1;
+  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '==','!=', '&&', '||',';', ')', ','");
+
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseRel() {
+  auto subexpr = ParseSubExpr();
+  if (subexpr) {
+    auto rel_prime = ParseRelPrime(std::move(subexpr));
+    return rel_prime;
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseRelPrime(std::unique_ptr<ASTnode> subexpr1) {
+  if (CurTok.type == LE || CurTok.type == LT || CurTok.type == GE || CurTok.type == GT) {
+    int Op = CurTok.type;
+    getNextToken(); //eat one of <, <=, >, >=
+    auto subexpr2 = ParseSubExpr();
+    if (subexpr2) {
+      auto node3 = std::make_unique<BinExpressionASTnode>(std::move(subexpr1), Op, std::move(subexpr2));
+      auto rel_prime = ParseRelPrime(std::move(node3));
+      return rel_prime;
+    }
       
-  } else if (CurTok.type == IF) { //PREDICT(stmt ::= if_stmt) = {"if"}
+  }
+  else if (CurTok.type == EQ || CurTok.type == NE || CurTok.type == OR 
+  || CurTok.type == AND || CurTok.type == SC|| CurTok.type == RPAR 
+  || CurTok.type == COMMA) { //PREDICT(rel_prime ::= ε) = {'==', '!=', '||', '&&', ';', ')', ','}
+    return subexpr1;
+  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
+
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseSubExpr() {
+  auto factor = ParseFactor();
+  if (factor) {
+    auto subexpr_prime = ParseSubExprPrime(std::move(factor));
+    return subexpr_prime;
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseSubExprPrime(std::unique_ptr<ASTnode> factor1) {
+  if (CurTok.type == PLUS || CurTok.type == MINUS) {
+    int Op = CurTok.type;
+    getNextToken(); //eat one of + or -
+    auto factor2 = ParseFactor();
+    if (factor2) {
+      auto node4 = std::make_unique<BinExpressionASTnode>(std::move(factor1),Op,std::move(factor2));
+      auto subexpr_prime = ParseSubExprPrime(std::move(node4));
+      return subexpr_prime;
+    }
+  }
+  else if (CurTok.type == LE || CurTok.type == LT || CurTok.type == GE || CurTok.type == GT 
+  || CurTok.type == EQ || CurTok.type == NE || CurTok.type == OR || CurTok.type == AND 
+  || CurTok.type == SC|| CurTok.type == RPAR || CurTok.type == COMMA) {
+    return factor1;
+  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '+','-','<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
+
+  return nullptr;
+}
+
+
+static std::unique_ptr<ASTnode> ParseFactor() {
+  auto element = ParseElement();
+  if (element) {
+    auto factor_prime = ParseFactorPrime(std::move(element));
+    return factor_prime;
+  }
+  //return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode> element1) {
+  if (CurTok.type == ASTERIX || CurTok.type == DIV || CurTok.type == MOD) {
+    int Op = CurTok.type;
+    getNextToken(); //eat one of *, /, %
+    auto element2 = ParseElement();
+    if (element2) {
+      auto node5 = std::make_unique<BinExpressionASTnode>(std::move(element1),Op,std::move(element2));
+      auto factor_prime = ParseFactorPrime(std::move(node5));
+      return factor_prime;
+    }
+  }
+  else if (CurTok.type == PLUS || CurTok.type == MINUS || CurTok.type == LE || 
+  CurTok.type == LT || CurTok.type == GE || CurTok.type == GT || CurTok.type == EQ || 
+  CurTok.type == NE || CurTok.type == OR || CurTok.type == AND || CurTok.type == SC
+  || CurTok.type == RPAR || CurTok.type == COMMA) {
+    return std::move(element1);
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '*','/','%', '+','-','<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
+
+  return nullptr;
+}
+
+static std::unique_ptr<ASTnode> ParseElement() {
+  if (CurTok.type == IDENT) {
+    std::string ident = IdentifierStr;
+    TOKEN ident_token = CurTok;
+    getNextToken(); //eat ident
+    return std::make_unique<IdentASTnode>(ident_token,ident);
+  } 
+  else if (CurTok.type == INT_LIT) {
+    int val = IntVal;
+    TOKEN int_token = CurTok;
+    getNextToken(); //eat int_lit
+    return std::make_unique<IntASTnode>(int_token,val);
+  }
+  else if (CurTok.type == FLOAT_LIT) {
+    float val = FloatVal;
+    TOKEN float_token = CurTok;
+    getNextToken(); //eat float_lit
+    return std::make_unique<FloatASTnode>(float_token, val);
+  }
+  else if (CurTok.type == BOOL_LIT) {
+    bool val = BoolVal;
+    TOKEN bool_token = CurTok;
+    getNextToken(); //eat bool_lit
+    return std::make_unique<BoolASTnode>(bool_token, val);
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
+  return nullptr;
+}
+
+
+static std::unique_ptr<ExpressionASTnode> ParseExpr() {
+  TOKEN lookahead1 = lookahead(1);
+  std::cout << "Curtok is " << CurTok.lexeme.c_str() << std::endl;
+  std::cout << "lookahead 1 is" << lookahead1.lexeme.c_str() << std::endl;
+
+  if (lookahead1.type == ASSIGN) { //expand by expr ::= IDENT "=" expr
+    if (match(IDENT,"Identifier")) {
+      std::string ident = IdentifierStr;
+      getNextToken(); //eat identifier
+      getNextToken(); //eat =     //we know this from lookahead
+      auto expr = ParseExpr();
+      if (expr) //depending on if expression is another assign or binop return that node
+        return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
+    }
+  }
+  else {
+    auto rval = ParseRval();
+    if (rval)
+      return std::make_unique<ExpressionASTnode>(std::move(rval));
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
+  if (CurTok.type == SC) //PREDICT(expr_stmt ::= ;) = {';'}
+    return std::make_unique<ExpresssionStatementASTnode>(true);
+  else { 
+    //PREDICT(expr_stmt ::= expr ;) = { IDENT, "-", "!", "(", int_lit, float_lit, bool_lit}
+    //however this parse function is only called if we know the current token is an element of PREDICT(expr_stmt ::= expr ;)
+    auto expr = ParseExpr();
+    std::cout << expr->to_string() << std::endl;
+    if (expr) {
+      if (match(SC,";")) {
+        getNextToken(); //eat ;
+        return std::make_unique<ExpresssionStatementASTnode>(std::move(expr));
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+static std::unique_ptr<ElseStatementASTnode> ParseElseStmt() {
+  if (match(ELSE,"else")) {
+    getNextToken(); // eat else
+    auto block = ParseBlock();
+    if (block)
+      return std::make_unique<ElseStatementASTnode>(std::move(block));
+  }
+  else if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF 
+  || CurTok.type == WHILE || CurTok.type == RETURN || CurTok.type == IDENT
+  || CurTok.type == MINUS || CurTok.type == NOT || CurTok.type == LPAR
+  || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT
+  || CurTok.type == RBRA ) { //FOLLOW(if_stmt)
+    return std::make_unique<ElseStatementASTnode>();
+  } else return LogErrorPtr<ElseStatementASTnode>(CurTok, "Expected one of 'else','{', ';', if, while, return , identifier, '-', '!', '(', int_lit, float_lit, bool_lit, '}'");
+
+  return nullptr;
+}
+
+static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
+  if (match(IF,"if")) {
+    getNextToken(); // eat if
+    if (match(LPAR,"(")) {
+      getNextToken(); //eat (
+      auto expr = ParseExpr(); //eats expr
+      if (expr) {
+        std::cout << "in the if statement the expr is" << expr->to_string() << std::endl;
+        if (match(RPAR,")")) {
+          getNextToken(); //eat )
+          auto block = ParseBlock();
+          if (block) {
+            std::cout << "block is valid" << std::endl;
+            auto else_stmt = ParseElseStmt();
+            if (else_stmt) {
+              return nullptr; 
+            }
+              //return make_unique<IfStatementASTnode>
+          }
+        }
+      }
+    }
+  }
+}
+
+static std::unique_ptr<StatementASTnode> ParseStmt() {
+  std::cout << "entered parseStmt the Curtok is " << CurTok.lexeme.c_str() << std::endl;
+  if (CurTok.type == SC || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
+  CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || 
+  CurTok.type == BOOL_LIT) {
+    //PREDICT(stmt ::= expr_stmt) = {";", IDENT, "-", "!", "(", int_lit, float_lit, bool_lit}
+    auto expr_stmt = ParseExprStmt();
+    if (expr_stmt)
+      return std::make_unique<StatementASTnode>(std::move(expr_stmt));
+  }
+  else if (CurTok.type == LBRA) { //PREDICT(stmt ::= block) = {"{"}
+      
+  } 
+  else if (CurTok.type == IF) { //PREDICT(stmt ::= if_stmt) = {"if"}
+    auto if_stmt = ParseIfStmt();
     
-  } else if (CurTok.type == WHILE) { //PREDICT(stmt ::= while_stmt) = {"while"}
+  } 
+  else if (CurTok.type == WHILE) { //PREDICT(stmt ::= while_stmt) = {"while"}
     
-  } else if (CurTok.type == RETURN) {//PREDICT(stmt ::= return_stmt) = {"return"}
+  } 
+  else if (CurTok.type == RETURN) {//PREDICT(stmt ::= return_stmt) = {"return"}
     
   }
+
+  return nullptr;
 }
 
 static std::unique_ptr<StatementListASTnode> ParseStmtList() {
@@ -894,6 +1364,18 @@ static std::unique_ptr<StatementListASTnode> ParseStmtList() {
     //PREDICT(stmt_list ::= stmt stmt_list) = 
     //{"{", ";", "if", "while", "return", IDENT, "-", "not", "(", int_lit, float_lit, bool_lit }
     auto stmt = ParseStmt();
+    if (stmt) {
+      std::cout << stmt->to_string() << std::endl;
+      stmt_list.push_back(std::move(stmt));
+      auto stmt_list_prime = ParseStmtList();
+
+      if (stmt_list_prime->getStmts().size() > 0) {
+        for (int i = 0; i < stmt_list_prime->getStmts().size();i++) {
+          stmt_list.push_back(std::move(stmt_list_prime->getStmts().at(i)));
+        }
+      }
+      return std::make_unique<StatementListASTnode>(std::move(stmt_list));
+    }
   }
   return nullptr;
 }
@@ -904,6 +1386,9 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
   if (CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //PREDICT(local_decls ::= local_decl local_decls) = {int, float, bool}
     auto decl = ParseVarDecl(); 
     if (decl) {
+      std::cout << "|-DeclStmt" << std::endl;
+      std::cout << "  `-VarDecl " << decl->getId() << " '" << type_to_string(decl->getType()) << "'" << std::endl;
+
       local_decls.push_back(std::move(decl));
       auto local_decl_list = ParseLocalDecls();
 
@@ -921,62 +1406,60 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
     //PREDICT(local_decls ::= ε) = {"{", ";", "if", "while", "return", IDENT, "-", "!", "(", int_lit, float_lit, bool_lit, "}" }
     return std::make_unique<LocalDeclarationsASTnode>(std::move(local_decls));
   }
-  return LogErrorPtr<LocalDeclarationsASTnode>("Expected either a local declaration or statement");
+  return LogErrorPtr<LocalDeclarationsASTnode>(CurTok, "Expected either a local declaration or statement");
 }
 
 //if fun_decl is called 
-static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl(int type, const std::string &ident) {
-  if (match(LPAR,"(")) {
-    getNextToken(); //eat (
-    auto params = ParseParams();
-    if (params) {
-      if (CurTok.type == RPAR) {
-        getNextToken(); //eat )
-        auto block = ParseBlock();
-        /*if (block)
-          return std::make_unique<FunctionDeclarationASTnode>(type, ident, std::move(params), std::move(block));*/
-
-        return nullptr;
-      }
-    }
-  }
-}
-
-
-// decl ::= var_decl | fun_decl
-//unable to determine which production to apply without lookahead of 1
-static std::unique_ptr<DeclarationASTnode> ParseDecl() {
-  auto type = ParseTypeSpec(); //eats type 
-
+static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
+  auto type = ParseTypeSpec();
   if (type) {
     if (match(IDENT,"Identifier")) {
       std::string ident = IdentifierStr;
       getNextToken(); //eat ident
-      if (type->getType() == VOID_TOK) { //only functions can start with void so parse function decl
-        
-      } else { //type is either int/float/bool so can be var or fun decl
-        if (CurTok.type == SC) { //variable decl
-
-        getNextToken(); //eat ;
-        auto var_decl = std::make_unique<VariableDeclarationASTnode>(type->getType(), ident);
-        return std::make_unique<DeclarationASTnode>(std::move(var_decl)); //variable declaration
-
-        } else { //either a function declaration or error any errors are caught in ParseFunDecl
-          //function declaration
-          auto fun_decl = ParseFunDecl(type->getType(), ident);
-          if (fun_decl)
-            return std::make_unique<DeclarationASTnode>(std::move(fun_decl));
-        } 
+      if (match(LPAR,"(")) {
+        getNextToken(); //eat (
+        auto params = ParseParams(); //eat params
+        if (params) {
+          if (match(RPAR,")")) {
+            getNextToken(); //eat )
+            auto block = ParseBlock();
+            /*if (block)
+          return std::make_unique<FunctionDeclarationASTnode>(type, ident, std::move(params), std::move(block));*/
+          }
+        }
       }
-      return LogErrorPtr<DeclarationASTnode>("Expected one of ; or (");
     }
   }
   return nullptr;
-
-
 }
 
+// decl ::= var_decl | fun_decl
+//unable to determine which production to apply without lookahead of 2
+static std::unique_ptr<DeclarationASTnode> ParseDecl() {
+  TOKEN lookahead_2 = lookahead(2);
 
+  if (lookahead_2.type == SC) { 
+    auto var_decl = ParseVarDecl();
+    if (var_decl)
+      return std::make_unique<DeclarationASTnode>(std::move(var_decl));
+  }
+  else if (lookahead_2.type == LPAR) {
+    auto fun_decl = ParseFunDecl();
+    if (fun_decl)
+      return std::make_unique<DeclarationASTnode>(std::move(fun_decl));
+  }
+  //if lookahead 2 is not ; or ( we know its wrong but a syntax error might occur earlier
+  //and we should return that error message instead
+  auto type = ParseTypeSpec();
+  if (type) {
+    if (match(IDENT,"Identifier")) {
+      getNextToken();
+      return LogErrorPtr<DeclarationASTnode>(CurTok,"Expected one of ; or (");
+    }
+  }
+
+  return nullptr;
+}
 
 static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
   auto type = ParseVarType(); //eat type
@@ -990,7 +1473,7 @@ static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
       }
     }
   }
-  return LogErrorPtr<VariableDeclarationASTnode>("Expected one of int, float, bool");
+  return nullptr;
 }
 
 // extern_list ::= extern extern_list_prime
@@ -999,6 +1482,8 @@ static std::unique_ptr<ExternListASTnode> ParseExternList() {
 
   auto extern_ = ParseExtern();
   if (extern_) {
+    std::cout << "|-FunctionDecl " << extern_->to_string() << std::endl;
+    extern_->OutputParams();
     extern_list.push_back(std::move(extern_));
     auto extern_list_prime = ParseExternListPrime();
     for (int i = 0; i < extern_list_prime.size(); i++) {
@@ -1018,7 +1503,7 @@ static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime() {
   } else if (CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK || CurTok.type == INT_TOK || CurTok.type == VOID_TOK) {
     return {};
   }
-  return LogErrorVector<ExternASTnode>("Expected one of extern, float, int, void, bool"); 
+  return LogErrorVector<ExternASTnode>(CurTok, "Expected one of extern, float, int, void, bool"); 
 }
 
 static std::unique_ptr<ExternASTnode> ParseExtern() {
@@ -1084,7 +1569,7 @@ static std::vector<std::unique_ptr<ParameterASTnode>> ParseParamListPrime() {
       if (param_list)
         return param_list->getParams();
   }
-  return LogErrorVector<ParameterASTnode>("Expected one of ) or ,"); //change to error message that expected one of rpar or comma
+  return LogErrorVector<ParameterASTnode>(CurTok, "Expected one of ) or ,"); //change to error message that expected one of rpar or comma
 }
 
 static std::unique_ptr<ParameterASTnode> ParseParam() {
@@ -1100,10 +1585,6 @@ static std::unique_ptr<ParameterASTnode> ParseParam() {
 }
 
 
-
-
-
-
 // program ::= extern_list decl_list
 static void parser() {
   // add body
@@ -1113,32 +1594,22 @@ static void parser() {
 
 /*Supply an look ahead value and returns the token at that lookahead*/
 static TOKEN lookahead(int ahead) {
-  int tempLine = lineNo;
-  int tempColumn = columnNo;
-  TOKEN tempToken = CurTok;
+  TOKEN tokens [ahead]; 
 
-  for (int i = 0; i < ahead; i++)
+  for (int i = 0; i < ahead; i++) {
+    tokens[i] = CurTok;
     getNextToken();
+  }
 
-  TOKEN result = CurTok;
-  long offset = ahead * -1;
-  fseek(pFile,offset, SEEK_CUR);
+  TOKEN lookahead = CurTok;
+  putBackToken(lookahead);
 
-  if (ahead == 1) {
-    for (int i = 0; i < 6; i++)
-      getNextToken();
-  } 
+  for (int i = ahead-1; i >= 0; i--) {
+    putBackToken(tokens[i]);
+  }
 
-  if (ahead == 2) {
-    for (int i = 0; i < 5; i++)
-      getNextToken();
-  } 
-
-  CurTok = tempToken;
-  lineNo = tempLine;
-  columnNo = tempColumn;
-
-  return result;
+  getNextToken();
+  return lookahead;
 }
 //===----------------------------------------------------------------------===//
 // Code Generation
