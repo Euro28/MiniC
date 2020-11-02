@@ -425,6 +425,7 @@ class ExpresssionStatementASTnode;
 class ReturnStatementASTnode;
 class WhileStatementASTnode;
 class ExpressionASTnode;
+class ArgumentListASTnode;
 
 /// ASTnode - Base class for all AST nodes.
 class ASTnode {
@@ -837,12 +838,34 @@ public:
 
 /*Either a list of arguments or no arguments*/
 class ArgumentsASTnode : public ASTnode {
+  std::unique_ptr<ArgumentListASTnode> Arg_list;
 
+public:
+  virtual Value *codegen() override {};
+
+  ArgumentsASTnode(std::unique_ptr<ArgumentListASTnode> arg_list)
+  : Arg_list(std::move(arg_list)) {}
+
+  ArgumentsASTnode() {}
+
+  std::unique_ptr<ArgumentListASTnode> getArgList() {
+    return std::move(Arg_list);
+  }
 };
 
 /*List(vector) of arguments which are just expressions*/
 class ArgumentListASTnode : public ASTnode {
+  std::vector<std::unique_ptr<ExpressionASTnode>> Arg_list;
 
+public:
+  virtual Value *codegen() override {};
+
+  ArgumentListASTnode(std::vector<std::unique_ptr<ExpressionASTnode>> arg_list)
+  : Arg_list(std::move(arg_list)) {}
+
+  std::vector<std::unique_ptr<ExpressionASTnode>> getArgs() {
+    return std::move(Arg_list);
+  }
 };
 
 // IntASTnode - Class for integer literals like 1, 2, 10,
@@ -870,6 +893,10 @@ class FloatASTnode : public ASTnode {
 public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
+
+  std::string to_string() const override {
+    return std::to_string(Val);
+  }
 };
 
 // BoolASTnode - class for boolean literals, true or false.
@@ -959,7 +986,8 @@ static std::unique_ptr<ASTnode> ParseSubExprPrime(std::unique_ptr<ASTnode>);
 static std::unique_ptr<ASTnode> ParseFactor();
 static std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode>);
 static std::unique_ptr<ASTnode> ParseElement();
-
+static std::unique_ptr<ArgumentListASTnode> ParseArgList();
+static std::unique_ptr<ExpressionASTnode> ParseExpr();
 
 static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
   if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
@@ -1048,6 +1076,7 @@ static std::unique_ptr<ASTnode> ParseRval() {
   auto term = ParseTerm();
   if (term) {
     auto rval_prime = ParseRvalPrime(std::move(term));
+    std::cout << "rval prime should be a float is : " << rval_prime->to_string();
     return rval_prime;
   }
   return nullptr;
@@ -1074,6 +1103,7 @@ static std::unique_ptr<ASTnode> ParseTerm() {
   auto equiv = ParseEquiv();
   if (equiv) {
     auto term_prime = ParseTermPrime(std::move(equiv));
+    std::cout << "term prime should be a float is : " << term_prime->to_string();
     return term_prime;
   }
   return nullptr;
@@ -1228,6 +1258,7 @@ static std::unique_ptr<ASTnode> ParseElement() {
     return std::make_unique<IntASTnode>(int_token,val);
   }
   else if (CurTok.type == FLOAT_LIT) {
+    std::cout << "FLOAT LIT HERE" << std::endl;
     float val = FloatVal;
     TOKEN float_token = CurTok;
     getNextToken(); //eat float_lit
@@ -1238,10 +1269,53 @@ static std::unique_ptr<ASTnode> ParseElement() {
     TOKEN bool_token = CurTok;
     getNextToken(); //eat bool_lit
     return std::make_unique<BoolASTnode>(bool_token, val);
+  } 
+  else if (CurTok.type == MINUS) {
+
   } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
   return nullptr;
 }
 
+static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
+  if (match(COMMA, ",")) {
+    getNextToken(); // eat ,
+    auto arg_list = ParseArgList();
+    if (arg_list) {
+      return arg_list->getArgs();
+    }
+  }
+  else if (match(RPAR,")")) { //PREDICT(arg_list_prime ::= ε) = {')'}
+    getNextToken(); //eat )
+    return {};
+  } else return LogErrorVector<ExpressionASTnode>(CurTok, "Expectecd one of ',' or ')'");
+}
+
+static std::unique_ptr<ArgumentListASTnode> ParseArgList() {
+  std::vector<std::unique_ptr<ExpressionASTnode>> arg_list;
+
+  auto expr = ParseExpr();
+  if (expr) {
+    arg_list.push_back(std::move(expr));
+    auto arg_list_prime = ParseArgListPrime();
+    for (int i = 0; i < arg_list_prime.size(); i++) {
+      arg_list.push_back(std::move(arg_list_prime.at(i)));
+    }
+    return std::make_unique<ArgumentListASTnode>(std::move(arg_list));
+  }
+
+  return nullptr;
+}
+
+static std::unique_ptr<ArgumentsASTnode> ParseArgs() {
+  if (CurTok.type == RPAR) { //PREDICT(Args ::= ε) = {')'}
+    return std::make_unique<ArgumentsASTnode>();
+  }
+  else if (CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT
+  || CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT
+  || CurTok.type == BOOL_LIT) {
+    auto arg_list = ParseArgList();
+  } else return LogErrorPtr<ArgumentsASTnode>(CurTok, "Expected one of ')', ident, '-', '!', '(', int lit, float lit, bool lit");
+}
 
 static std::unique_ptr<ExpressionASTnode> ParseExpr() {
   TOKEN lookahead1 = lookahead(1);
@@ -1254,6 +1328,7 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
       getNextToken(); //eat identifier
       getNextToken(); //eat =     //we know this from lookahead
       auto expr = ParseExpr();
+      std::cout << "the expr is ParseExpr is " << expr->to_string() << std::endl;
       if (expr) //depending on if expression is another assign or binop return that node
         return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
     }
