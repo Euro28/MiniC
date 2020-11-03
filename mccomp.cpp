@@ -648,7 +648,7 @@ public:
   std::string to_string() const override {
     std::stringstream ss;
     for (int i = 0; i < Params.size(); i++) {
-      ss << "| `-ParmVarDecl " << Params.at(i)->to_string() << std::endl;
+      ss << " | `-ParmVarDecl " << Params.at(i)->to_string() << std::endl;
     }
     return ss.str();
   }
@@ -716,8 +716,12 @@ public:
     std::stringstream ss;
     if (Var_decl)
       ss << "|-VarDecl " << Var_decl->to_string();
-    if (Fun_decl) 
+    if (Fun_decl) {
       ss << "`-FunctionDecl " << Fun_decl->to_string();
+      ss <<Fun_decl->getParams()->to_string();
+      //output local decls
+      //out stmt list
+    }
     return ss.str();
     
   }
