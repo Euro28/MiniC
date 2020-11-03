@@ -447,7 +447,7 @@ public:
 
   std::string to_string() const override {
     std::stringstream ss;
-    ss << Identifier << ": " << type_to_string(Var_type);
+    ss << Identifier << " '" << type_to_string(Var_type) << "'";
     return ss.str();
   }
 
@@ -474,7 +474,7 @@ public:
   std::string to_string() const override {
     std::stringstream ss;
     for (int i = 0; i < Local_decls.size(); i++) {
-      ss << Local_decls.at(i)->to_string() << ",";
+      ss << "   |-VarDecl used " << Local_decls.at(i)->to_string() ;
     }
     return ss.str();
   }
@@ -595,7 +595,7 @@ public:
 
   std::string to_string() const override {
     std::stringstream ss;
-    ss << Local_decls->to_string() << Stmt_list->to_string();
+    ss << Local_decls->to_string() << std::endl << Stmt_list->to_string();
     return ss.str();
   }
 
@@ -687,6 +687,12 @@ public:
   std::string to_string() const override {
     std::stringstream ss;
     ss << Identifier << "'" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
+    ss << Params->to_string();
+    if (Block)
+      ss << " `-BlockStatement" << std::endl << Block->to_string();
+
+    //output local decls
+      //out stmt list
     return ss.str();
   }
 };
@@ -716,12 +722,9 @@ public:
     std::stringstream ss;
     if (Var_decl)
       ss << "|-VarDecl " << Var_decl->to_string();
-    if (Fun_decl) {
+    if (Fun_decl) 
       ss << "`-FunctionDecl " << Fun_decl->to_string();
-      ss <<Fun_decl->getParams()->to_string();
-      //output local decls
-      //out stmt list
-    }
+    
     return ss.str();
     
   }
