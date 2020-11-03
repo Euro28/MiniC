@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 #include <tuple>
+#include <sstream>
 
 using namespace llvm;
 using namespace llvm::sys;
@@ -435,6 +436,29 @@ public:
   virtual std::string to_string() const {};
 };
 
+class VariableDeclarationASTnode : public ASTnode {
+  int Var_type;
+  std::string Identifier;
+
+public:
+
+  VariableDeclarationASTnode(int var_type, const std::string &identifier)
+  : Var_type(var_type), Identifier(identifier) {}
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << Identifier << ": " << type_to_string(Var_type);
+    return ss.str();
+  }
+
+  std::string getId() { return Identifier;}
+
+  int getType() {return Var_type;}
+
+
+  virtual Value *codegen() override {};
+};
+
 class LocalDeclarationsASTnode : public ASTnode {
   //this is just a vector of variable declarations
   std::vector<std::unique_ptr<VariableDeclarationASTnode>> Local_decls;
@@ -447,22 +471,15 @@ public:
     return std::move(Local_decls);
   }
 
-
-
-  virtual Value *codegen() override {};
-};
-
-class StatementListASTnode : public ASTnode {
-  //this is just a vector of statesments
-  std::vector<std::unique_ptr<StatementASTnode>> Stmt_list;
-
-public:
-  StatementListASTnode(std::vector<std::unique_ptr<StatementASTnode>> stmt_list)
-  : Stmt_list(std::move(stmt_list)) {}
-
-  std::vector<std::unique_ptr<StatementASTnode>> getStmts() {
-    return std::move(Stmt_list);
+  std::string to_string() const override {
+    std::stringstream ss;
+    for (int i = 0; i < Local_decls.size(); i++) {
+      ss << Local_decls.at(i)->to_string() << ",";
+    }
+    return ss.str();
   }
+
+
 
   virtual Value *codegen() override {};
 };
@@ -525,15 +542,43 @@ class StatementASTnode : public ASTnode {
   std::unique_ptr<ReturnStatementASTnode> Return_stmt;
 
 public:
+  StatementASTnode(std::unique_ptr<ReturnStatementASTnode> return_stmt)
+  : Return_stmt(std::move(return_stmt)) {}
 
   StatementASTnode(std::unique_ptr<ExpresssionStatementASTnode> expr_stmt)
   : Expr_stmt(std::move(expr_stmt)) {}
 
+  StatementASTnode(std::unique_ptr<IfStatementASTnode> if_stmt)
+  : If_stmt(std::move(if_stmt)) {}
+
   std::string to_string() const override {
-    if (Expr_stmt != nullptr) {
+    if (Expr_stmt) {
       return Expr_stmt->to_string();
     }
   }
+  virtual Value *codegen() override {};
+};
+
+class StatementListASTnode : public ASTnode {
+  //this is just a vector of statesments
+  std::vector<std::unique_ptr<StatementASTnode>> Stmt_list;
+
+public:
+  StatementListASTnode(std::vector<std::unique_ptr<StatementASTnode>> stmt_list)
+  : Stmt_list(std::move(stmt_list)) {}
+
+  std::vector<std::unique_ptr<StatementASTnode>> getStmts() {
+    return std::move(Stmt_list);
+  }
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    for (int i = 0; i < Stmt_list.size(); i++) {
+      ss << Stmt_list.at(i)->to_string();
+    }
+    return ss.str();
+  }
+
   virtual Value *codegen() override {};
 };
 
@@ -548,84 +593,14 @@ public:
   BlockASTnode(std::unique_ptr<LocalDeclarationsASTnode> local_decls, std::unique_ptr<StatementListASTnode> stmt_list)
   : Local_decls(std::move(local_decls)), Stmt_list(std::move(stmt_list)) {}
 
-};
-
-class FunctionDeclarationASTnode : public ASTnode {
-  int Fun_type;
-  std::string Identifier;
-  std::unique_ptr<ParamsASTnode> Params;
-  std::unique_ptr<BlockASTnode> Block;
-
-public:
-
-  FunctionDeclarationASTnode(
-    int fun_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params, std::unique_ptr<BlockASTnode> block)
-  : Fun_type(fun_type), Identifier(identifier), Params(std::move(params)), Block(std::move(block)) {}
-  
-  virtual Value *codegen() override {};
-};
-
-class VariableDeclarationASTnode : public ASTnode {
-  int Var_type;
-  std::string Identifier;
-
-public:
-
-  VariableDeclarationASTnode(int var_type, const std::string &identifier)
-  : Var_type(var_type), Identifier(identifier) {}
-
-  std::string to_string() const override {}
-
-  std::string getId() { return Identifier;}
-
-  int getType() {return Var_type;}
-
-
-  virtual Value *codegen() override {};
-};
-
-class DeclarationASTnode : public ASTnode {
-  std::unique_ptr<VariableDeclarationASTnode> Var_decl;
-  std::unique_ptr<FunctionDeclarationASTnode> Fun_decl;
-
-public:
-  virtual Value *codegen() override {};
-
-  DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl) 
-  : Var_decl(std::move(var_decl)) {}
-
-  std::unique_ptr<VariableDeclarationASTnode> getVarDecl() {
-    return std::move(Var_decl);
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << Local_decls->to_string() << Stmt_list->to_string();
+    return ss.str();
   }
 
-  DeclarationASTnode(std::unique_ptr<FunctionDeclarationASTnode> fun_decl)
-  : Fun_decl(std::move(fun_decl)) {}
-
-  std::unique_ptr<FunctionDeclarationASTnode> getFunDecl() {
-    return std::move(Fun_decl);
-  }
-
-
 };
 
-class DeclarationListASTnode : public ASTnode {
-  //will contain a vector of declarations
-  std::vector<std::unique_ptr<DeclarationASTnode>> List_decl;
-
-public:
-  virtual Value *codegen() override {};
-
-  DeclarationListASTnode(std::vector<std::unique_ptr<DeclarationASTnode>> list_decl)
-  : List_decl(std::move(list_decl)) {}
-
-  std::vector<std::unique_ptr<DeclarationASTnode>> getDecls() {
-    return std::move(List_decl);
-  }
-
-  DeclarationListASTnode() {}
-};
-
-//individual parameter say just int X
 class ParameterASTnode : public ASTnode {
   int Type;
   std::string Ident;
@@ -641,12 +616,9 @@ public:
   std::string getIdent() {return Ident;}
 
   std::string to_string() const override {
-    std::string result;
-    result += Ident;
-    result += " '";
-    result += type_to_string(Type);
-    result += "'";
-    return result;
+    std::stringstream ss;
+    ss << Ident << " '" << type_to_string(Type) << "'";
+    return ss.str();
   };
 
 };
@@ -674,6 +646,14 @@ public:
   }
 
   std::string to_string() const override {
+    std::stringstream ss;
+    for (int i = 0; i < Params.size(); i++) {
+      ss << "| `-ParmVarDecl " << Params.at(i)->to_string() << std::endl;
+    }
+    return ss.str();
+  }
+
+  std::string list_types() const {
     std::string result;
     for (int i=0; i < Params.size(); i++) {
       result += Params.at(i)->getType();
@@ -685,6 +665,93 @@ public:
 
   virtual Value *codegen() override {};
 };
+
+class FunctionDeclarationASTnode : public ASTnode {
+  int Fun_type;
+  std::string Identifier;
+  std::unique_ptr<ParamsASTnode> Params;
+  std::unique_ptr<BlockASTnode> Block;
+
+public:
+
+  FunctionDeclarationASTnode(
+    int fun_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params, std::unique_ptr<BlockASTnode> block)
+  : Fun_type(fun_type), Identifier(identifier), Params(std::move(params)), Block(std::move(block)) {}
+  
+  virtual Value *codegen() override {};
+
+  std::unique_ptr<ParamsASTnode> getParams() {
+    return std::move(Params);
+  }
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << Identifier << "'" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
+    return ss.str();
+  }
+};
+
+class DeclarationASTnode : public ASTnode {
+  std::unique_ptr<VariableDeclarationASTnode> Var_decl;
+  std::unique_ptr<FunctionDeclarationASTnode> Fun_decl;
+
+public:
+  virtual Value *codegen() override {};
+
+  DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl) 
+  : Var_decl(std::move(var_decl)) {}
+
+  std::unique_ptr<VariableDeclarationASTnode> getVarDecl() {
+    return std::move(Var_decl);
+  }
+
+  DeclarationASTnode(std::unique_ptr<FunctionDeclarationASTnode> fun_decl)
+  : Fun_decl(std::move(fun_decl)) {}
+
+  std::unique_ptr<FunctionDeclarationASTnode> getFunDecl() {
+    return std::move(Fun_decl);
+  }
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    if (Var_decl)
+      ss << "|-VarDecl " << Var_decl->to_string();
+    if (Fun_decl) 
+      ss << "`-FunctionDecl " << Fun_decl->to_string();
+    return ss.str();
+    
+  }
+
+
+};
+
+class DeclarationListASTnode : public ASTnode {
+  //will contain a vector of declarations
+  std::vector<std::unique_ptr<DeclarationASTnode>> List_decl;
+
+public:
+  virtual Value *codegen() override {};
+
+  DeclarationListASTnode(std::vector<std::unique_ptr<DeclarationASTnode>> list_decl)
+  : List_decl(std::move(list_decl)) {}
+
+  std::vector<std::unique_ptr<DeclarationASTnode>> getDecls() {
+    return std::move(List_decl);
+  }
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    for (int i = 0; i < List_decl.size(); i++) {
+      ss << List_decl.at(i)->to_string();
+      if (i != List_decl.size()-1)
+        ss << std::endl;
+    }
+    return ss.str();
+  }
+
+  DeclarationListASTnode() {}
+};
+
 
 class ExternASTnode: public ASTnode {
   int Token_type;
@@ -700,18 +767,10 @@ public:
   }
 
   std::string to_string() const override {
-    std::string result = "used ";
-    result += Identifier; 
-    result += " ";
-    result += type_to_string(Token_type);
-    result += " (";
-    result += Params->to_string();
-    result += ")' extern";
-    return result;
-  }
-
-  void OutputParams() {
-      std::cout << "  `-ParmVarDecl " << Params->getParams().at(0)->to_string() << std::endl;
+    std::stringstream ss;
+    ss << " " << Identifier << " '" << type_to_string(Token_type) << " (" << Params->list_types() << ")' extern" << std::endl;
+    ss << Params->to_string();
+    return ss.str();
   }
 
 
@@ -736,7 +795,11 @@ public:
   virtual Value *codegen() override {};
 
   std::string to_string() const override {
-    return "the size of the vector is " + std::to_string(List_Extern.size());
+    std::stringstream ss;
+    for (int i=0;i < List_Extern.size(); i++) {
+      ss << "|-FunctionDecl used" << List_Extern.at(i)->to_string();
+    }
+    return ss.str();
   }
 
   //will contain a vector of externs
@@ -745,18 +808,22 @@ public:
 //A program is just a list of extern declarations and then 
 //list of normal declartions or just a list of declarations
 class ProgramASTnode : public ASTnode {
-  ExternListASTnode Extern_list;
-  DeclarationListASTnode Decl_list;
+  std::unique_ptr<ExternListASTnode> Extern_list;
+  std::unique_ptr<DeclarationListASTnode> Decl_list;
 
 public: 
-  ProgramASTnode(ExternListASTnode extern_list, DeclarationListASTnode decl_list)
+  ProgramASTnode(std::unique_ptr<ExternListASTnode> extern_list, std::unique_ptr<DeclarationListASTnode> decl_list)
   : Extern_list(std::move(extern_list)), Decl_list(std::move(decl_list)) {} //have to move because the list classes have smart pointers as their members
 
-  ProgramASTnode(DeclarationListASTnode decl_list) 
+  ProgramASTnode(std::unique_ptr<DeclarationListASTnode> decl_list) 
   : Decl_list(std::move(decl_list)) {}
   virtual Value *codegen() override {};
 
-
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << Extern_list->to_string() << Decl_list->to_string();
+    return ss.str();
+  }
 };
 
 
@@ -784,22 +851,6 @@ public:
   }
 };
 
-
-class IfStatementASTnode : public ASTnode {
-  //contains the expr which evaluates 
-  //block which executes if true
-  //else statement (second block that executes if false)
-};
-
-class WhileStatementASTnode : public ASTnode {
-  //just an expression which evaluates
-  //and a stmt which executes if expr is true
-};
-
-class ReturnStatementASTnode : public ASTnode {
-  //expr which evaluates to some value which can be returned.
-};
-
 class ElseStatementASTnode : public ASTnode  {
   std::unique_ptr<BlockASTnode> Block;
 
@@ -811,7 +862,61 @@ public:
 
   ElseStatementASTnode() {}
 
+  std::string to_string() const override {
+    if (Block) {
+      return Block->to_string();
+    }
+    return "";
+  }
+
 };
+
+class IfStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  std::unique_ptr<BlockASTnode> Block;
+  std::unique_ptr<ElseStatementASTnode> Else;
+
+public:
+  virtual Value *codegen() override {};
+  
+  IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
+  std::unique_ptr<ElseStatementASTnode> else_ptr) 
+  : Expr(std::move(expr)), Block(std::move(block)), Else(std::move(else_ptr)) {}
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << "if (" << Expr->to_string() << " ) " << Block->to_string() << " else " << Else->to_string();
+    return ss.str();
+  };
+
+};
+
+class WhileStatementASTnode : public ASTnode {
+  //just an expression which evaluates
+  //and a stmt which executes if expr is true
+};
+
+class ReturnStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+
+public:
+  virtual Value *codegen() override {};
+
+  ReturnStatementASTnode(std::unique_ptr<ExpressionASTnode> expr)
+  : Expr(std::move(expr)) {}
+
+  ReturnStatementASTnode() {}
+
+  std::string to_string() const override {
+    if (Expr) {
+      std::stringstream ss;
+      ss << "return " << Expr->to_string() << ";";
+      return ss.str();
+    }
+    return "return ;";
+  }
+};
+
 
 class BinExpressionASTnode : public ASTnode {
   int Op;
@@ -834,6 +939,32 @@ public:
 
 };
 
+/*List(vector) of arguments which are just expressions*/
+class ArgumentListASTnode : public ASTnode {
+  std::vector<std::unique_ptr<ExpressionASTnode>> Arg_list;
+
+public:
+  virtual Value *codegen() override {};
+
+  ArgumentListASTnode(std::vector<std::unique_ptr<ExpressionASTnode>> arg_list)
+  : Arg_list(std::move(arg_list)) {}
+
+  std::vector<std::unique_ptr<ExpressionASTnode>> getArgs() {
+    return std::move(Arg_list);
+  }
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << "(";
+    for (int i = 0; i<Arg_list.size(); i++) {
+      ss << Arg_list.at(i)->to_string();
+    }
+    ss << ")";
+    return ss.str();
+  }
+};
+
+
 /*Either a list of arguments or no arguments*/
 class ArgumentsASTnode : public ASTnode {
   std::unique_ptr<ArgumentListASTnode> Arg_list;
@@ -849,21 +980,8 @@ public:
   std::unique_ptr<ArgumentListASTnode> getArgList() {
     return std::move(Arg_list);
   }
-};
 
-/*List(vector) of arguments which are just expressions*/
-class ArgumentListASTnode : public ASTnode {
-  std::vector<std::unique_ptr<ExpressionASTnode>> Arg_list;
-
-public:
-  virtual Value *codegen() override {};
-
-  ArgumentListASTnode(std::vector<std::unique_ptr<ExpressionASTnode>> arg_list)
-  : Arg_list(std::move(arg_list)) {}
-
-  std::vector<std::unique_ptr<ExpressionASTnode>> getArgs() {
-    return std::move(Arg_list);
-  }
+  std::string to_string() const override {return Arg_list->to_string();}
 };
 
 // IntASTnode - Class for integer literals like 1, 2, 10,
@@ -935,7 +1053,9 @@ public:
   : Name(name), Args(std::move(args)) {}
 
   std::string to_string() const override {
-    return Name;
+    std::string result = Name;
+    result += Args->to_string();
+    return result;
   }
 
 };
@@ -1028,18 +1148,19 @@ static std::unique_ptr<ProgramASTnode> ParseProgram() {
   if (CurTok.type == EXTERN) { //PREDICT(program ::= extern_list decl_list) = {extern}
     auto extern_list = ParseExternList();
     if (extern_list) {
+      std::cout << "extern_list is valid" << std::endl;
       auto decl_list = ParseDeclList();
       if (decl_list) {
-        return nullptr;
-        //return std::make_unique<ProgramASTnode>(extern_list,decl_list);
+        std::cout << "Decl list is valid " << std::endl;
+        return std::make_unique<ProgramASTnode>(std::move(extern_list),std::move(decl_list));
       }
     }
-    return nullptr;
-  } else if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
+  } 
+  else if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
     // PREDICT(program ::= decl_list) = {int, void, float, bool}
-    /*auto decl_list = ParseDeclList();
+    auto decl_list = ParseDeclList();
     if (decl_list)
-      return std::make_unique<ProgramASTnode>(decl_list); */
+      return std::make_unique<ProgramASTnode>(std::move(decl_list)); 
   }
   return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
 }
@@ -1064,7 +1185,8 @@ static std::unique_ptr<DeclarationListASTnode> ParseDeclList() {
 static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
   if (CurTok.type == EOF_TOK) { //PREDICT(decl_list_prime ::= epsilon) = {EOF}
     return {};
-  } else { //decl_list_prime ::= decl decl_list_prime
+  } 
+  else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //decl_list_prime ::= decl decl_list_prime
     auto decl_list = ParseDeclList();
     if (decl_list)
       return decl_list->getDecls();
@@ -1079,8 +1201,12 @@ static std::unique_ptr<BlockASTnode> ParseBlock() {
     auto local_decls = ParseLocalDecls();
     if (local_decls) {
       auto stmt_list = ParseStmtList();
-      if (stmt_list)
-        return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
+      if (stmt_list) {
+        if (CurTok.type == RBRA) { // THE ISSUE IS HERE MOTHER FUCKER
+          getNextToken(); //eat }
+          return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
+        } 
+      }
     }
   }
   return nullptr;
@@ -1266,7 +1392,6 @@ static std::unique_ptr<ASTnode> ParseElement() {
 
     getNextToken(); // eat ident
     getNextToken(); // eat (
-    std::cout << "Parsing function call the cUrtok is " << CurTok.lexeme.c_str() << std::endl;
     auto args = ParseArgs();
     if (args) {
       if (match(RPAR,")")) {
@@ -1315,7 +1440,6 @@ static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
     }
   }
   else if (CurTok.type == RPAR) { //PREDICT(arg_list_prime ::= ε) = {')'}
-    getNextToken(); //eat )
     return {};
   } else return LogErrorVector<ExpressionASTnode>(CurTok, "Expectecd one of ',' or ')'");
 }
@@ -1324,9 +1448,7 @@ static std::unique_ptr<ArgumentListASTnode> ParseArgList() {
   std::vector<std::unique_ptr<ExpressionASTnode>> arg_list;
   auto expr = ParseExpr();
   if (expr) {
-    std::cout << "in parsing arg list expr is valid" << std::endl; 
     arg_list.push_back(std::move(expr));
-    std::cout << "pushback worked the expr is" << expr->to_string() << std::endl;
     auto arg_list_prime = ParseArgListPrime();
     for (int i = 0; i < arg_list_prime.size(); i++) {
       arg_list.push_back(std::move(arg_list_prime.at(i)));
@@ -1345,6 +1467,9 @@ static std::unique_ptr<ArgumentsASTnode> ParseArgs() {
   || CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT
   || CurTok.type == BOOL_LIT) {
     auto arg_list = ParseArgList();
+    if (arg_list) 
+      return std::make_unique<ArgumentsASTnode>(std::move(arg_list));
+
   } else return LogErrorPtr<ArgumentsASTnode>(CurTok, "Expected one of ')', ident, '-', '!', '(', int lit, float lit, bool lit");
 }
 
@@ -1362,7 +1487,6 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
     }
   }
   else {
-    
     auto rval = ParseRval();
     if (rval)
       return std::make_unique<ExpressionASTnode>(std::move(rval));
@@ -1389,10 +1513,10 @@ static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
 }
 
 static std::unique_ptr<ElseStatementASTnode> ParseElseStmt() {
-  if (match(ELSE,"else")) {
+  if (CurTok.type == ELSE) {
     getNextToken(); // eat else
     auto block = ParseBlock();
-    if (block)
+    if (block) 
       return std::make_unique<ElseStatementASTnode>(std::move(block));
   }
   else if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF 
@@ -1415,16 +1539,12 @@ static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
       if (expr) {
         if (match(RPAR,")")) {
           getNextToken(); //eat )
-          std::cout << "ate )" << std::endl;
           auto block = ParseBlock();
           if (block) {
-            std::cout << "block is valid" << std::endl;
             auto else_stmt = ParseElseStmt();
             if (else_stmt) {
-              std::cout << "else stmt is valid" << std::endl;
-              return nullptr; 
+              return std::make_unique<IfStatementASTnode>(std::move(expr), std::move(block), std::move(else_stmt));
             }
-              //return make_unique<IfStatementASTnode>
           }
         }
       }
@@ -1432,8 +1552,24 @@ static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
   }
 }
 
+static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
+  if (match(RETURN, "return")) {
+    getNextToken(); //eat return
+    TOKEN lookahead1 = lookahead(1);
+    if (lookahead1.type == SC) { //expr term
+      auto expr = ParseExpr();
+      if (expr) {
+        if (match(SC,";")) {
+          getNextToken(); //eat sc
+          return std::make_unique<ReturnStatementASTnode>(std::move(expr));
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
 static std::unique_ptr<StatementASTnode> ParseStmt() {
-  std::cout << "entered parseStmt the Curtok is " << CurTok.lexeme.c_str() << std::endl;
   if (CurTok.type == SC || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
   CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || 
   CurTok.type == BOOL_LIT) {
@@ -1447,22 +1583,24 @@ static std::unique_ptr<StatementASTnode> ParseStmt() {
   } 
   else if (CurTok.type == IF) { //PREDICT(stmt ::= if_stmt) = {"if"}
     auto if_stmt = ParseIfStmt();
-    
+    if (if_stmt)
+      return std::make_unique<StatementASTnode>(std::move(if_stmt));
     
   } 
   else if (CurTok.type == WHILE) { //PREDICT(stmt ::= while_stmt) = {"while"}
     
   } 
   else if (CurTok.type == RETURN) {//PREDICT(stmt ::= return_stmt) = {"return"}
-    
+    auto return_stmt = ParseReturnStmt();
+    return std::make_unique<StatementASTnode>(std::move(return_stmt));
   }
 
   return nullptr;
 }
 
-static std::unique_ptr<StatementListASTnode> ParseStmtList() {
-  std::vector<std::unique_ptr<StatementASTnode>> stmt_list;
 
+static std::unique_ptr<StatementListASTnode> ParseStmtList() {
+  std::vector<std::unique_ptr<StatementASTnode>> stmt_list = {};
   if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF || CurTok.type == WHILE ||
   CurTok.type == RETURN || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
   CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT) {
@@ -1472,15 +1610,18 @@ static std::unique_ptr<StatementListASTnode> ParseStmtList() {
     if (stmt) {
       stmt_list.push_back(std::move(stmt));
       auto stmt_list_prime = ParseStmtList();
-
-      if (stmt_list_prime->getStmts().size() > 0) {
-        for (int i = 0; i < stmt_list_prime->getStmts().size();i++) {
+      if (!stmt_list_prime->getStmts().empty()) { 
+       /* for (int i = 0; i < stmt_list_prime->getStmts().size();i++) {
           stmt_list.push_back(std::move(stmt_list_prime->getStmts().at(i)));
-        }
+        }*/
       }
       return std::make_unique<StatementListASTnode>(std::move(stmt_list));
     }
   }
+  else if (CurTok.type == RBRA) { //PREDICT(stmt_list ::= ε) = {'}'}
+    return std::make_unique<StatementListASTnode>(std::move(stmt_list));
+  } else return LogErrorPtr<StatementListASTnode>(CurTok,"Expected { ; if while return ident - ! ( int_lit float_lit bool_lit }");
+
   return nullptr;
 }
 
@@ -1490,9 +1631,6 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
   if (CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //PREDICT(local_decls ::= local_decl local_decls) = {int, float, bool}
     auto decl = ParseVarDecl(); 
     if (decl) {
-      std::cout << "|-DeclStmt" << std::endl;
-      std::cout << "  `-VarDecl " << decl->getId() << " '" << type_to_string(decl->getType()) << "'" << std::endl;
-
       local_decls.push_back(std::move(decl));
       auto local_decl_list = ParseLocalDecls();
 
@@ -1527,8 +1665,8 @@ static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
           if (match(RPAR,")")) {
             getNextToken(); //eat )
             auto block = ParseBlock();
-            /*if (block)
-          return std::make_unique<FunctionDeclarationASTnode>(type, ident, std::move(params), std::move(block));*/
+            if (block)
+              return std::make_unique<FunctionDeclarationASTnode>(type->getType(), ident, std::move(params), std::move(block));
           }
         }
       }
@@ -1542,12 +1680,12 @@ static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
 static std::unique_ptr<DeclarationASTnode> ParseDecl() {
   TOKEN lookahead_2 = lookahead(2);
 
-  if (lookahead_2.type == SC) { 
+  if (lookahead_2.type == SC) { //variable declaration
     auto var_decl = ParseVarDecl();
     if (var_decl)
       return std::make_unique<DeclarationASTnode>(std::move(var_decl));
   }
-  else if (lookahead_2.type == LPAR) {
+  else if (lookahead_2.type == LPAR) { //function declaration
     auto fun_decl = ParseFunDecl();
     if (fun_decl)
       return std::make_unique<DeclarationASTnode>(std::move(fun_decl));
@@ -1586,8 +1724,6 @@ static std::unique_ptr<ExternListASTnode> ParseExternList() {
 
   auto extern_ = ParseExtern();
   if (extern_) {
-    std::cout << "|-FunctionDecl " << extern_->to_string() << std::endl;
-    extern_->OutputParams();
     extern_list.push_back(std::move(extern_));
     auto extern_list_prime = ParseExternListPrime();
     for (int i = 0; i < extern_list_prime.size(); i++) {
@@ -1638,12 +1774,15 @@ static std::unique_ptr<ExternASTnode> ParseExtern() {
 } //return nullptr and let root parse functions display the error message
 
 static std::unique_ptr<ParamsASTnode> ParseParams() {
-  if (CurTok.type == VOID_TOK) {
+  if (CurTok.type == VOID_TOK) { //PREDICT(params ::= "void") = {"void"}
     getNextToken();
-    return std::make_unique<ParamsASTnode>(true); //true parameter here will trigger constructor for void parameter
-  } else if (CurTok.type == RPAR) {
+    return std::make_unique<ParamsASTnode>(true); 
+  } 
+  else if (CurTok.type == RPAR) { //PREDICT(params ::= ε) = {')'}
     return std::make_unique<ParamsASTnode>();
-  } else if (CurTok.type == INT_TOK || CurTok.type == BOOL_TOK || CurTok.type == FLOAT_TOK) {
+  } 
+  else if (CurTok.type == INT_TOK || CurTok.type == BOOL_TOK || CurTok.type == FLOAT_TOK) {
+      //PREDICT(params ::= param_list) = {'int', 'bool', 'void'}
       auto param_list = ParseParamList();
       return std::move(param_list);
   }
@@ -1694,6 +1833,7 @@ static void parser() {
   // add body
   getNextToken();
   auto program = ParseProgram();
+  std::cout << program->to_string() << std::endl;
 }
 
 /*Supply an look ahead value and returns the token at that lookahead*/
