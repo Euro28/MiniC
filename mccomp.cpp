@@ -834,8 +834,6 @@ public:
 
 };
 
-
-
 /*Either a list of arguments or no arguments*/
 class ArgumentsASTnode : public ASTnode {
   std::unique_ptr<ArgumentListASTnode> Arg_list;
@@ -925,6 +923,22 @@ public:
   }
 };
 
+// FunctionCallASTnode - node that represetns function calls
+class FunctionCallASTnode : public ASTnode {
+  std::string Name;
+  std::unique_ptr<ArgumentsASTnode> Args;
+
+public:
+  virtual Value *codegen() override {};
+
+  FunctionCallASTnode(const std::string &name, std::unique_ptr<ArgumentsASTnode> args)
+  : Name(name), Args(std::move(args)) {}
+
+  std::string to_string() const override {
+    return Name;
+  }
+
+};
 
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
@@ -988,6 +1002,7 @@ static std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode>);
 static std::unique_ptr<ASTnode> ParseElement();
 static std::unique_ptr<ArgumentListASTnode> ParseArgList();
 static std::unique_ptr<ExpressionASTnode> ParseExpr();
+static std::unique_ptr<ArgumentsASTnode> ParseArgs();
 
 static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
   if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
@@ -1076,7 +1091,6 @@ static std::unique_ptr<ASTnode> ParseRval() {
   auto term = ParseTerm();
   if (term) {
     auto rval_prime = ParseRvalPrime(std::move(term));
-    std::cout << "rval prime should be a float is : " << rval_prime->to_string();
     return rval_prime;
   }
   return nullptr;
@@ -1103,7 +1117,6 @@ static std::unique_ptr<ASTnode> ParseTerm() {
   auto equiv = ParseEquiv();
   if (equiv) {
     auto term_prime = ParseTermPrime(std::move(equiv));
-    std::cout << "term prime should be a float is : " << term_prime->to_string();
     return term_prime;
   }
   return nullptr;
@@ -1245,12 +1258,30 @@ static std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode> elemen
 }
 
 static std::unique_ptr<ASTnode> ParseElement() {
-  if (CurTok.type == IDENT) {
+  TOKEN lookahead1 = lookahead(1);
+
+  if (CurTok.type == IDENT && lookahead1.type == LPAR) { //function call
     std::string ident = IdentifierStr;
     TOKEN ident_token = CurTok;
+
+    getNextToken(); // eat ident
+    getNextToken(); // eat (
+    std::cout << "Parsing function call the cUrtok is " << CurTok.lexeme.c_str() << std::endl;
+    auto args = ParseArgs();
+    if (args) {
+      if (match(RPAR,")")) {
+        getNextToken(); //eat )
+        return std::make_unique<FunctionCallASTnode>(ident, std::move(args));
+      }
+    }
+  } 
+  else if (CurTok.type == IDENT) { 
+    std::string ident = IdentifierStr;
+    TOKEN ident_token = CurTok;
+
     getNextToken(); //eat ident
     return std::make_unique<IdentASTnode>(ident_token,ident);
-  } 
+  }
   else if (CurTok.type == INT_LIT) {
     int val = IntVal;
     TOKEN int_token = CurTok;
@@ -1258,7 +1289,6 @@ static std::unique_ptr<ASTnode> ParseElement() {
     return std::make_unique<IntASTnode>(int_token,val);
   }
   else if (CurTok.type == FLOAT_LIT) {
-    std::cout << "FLOAT LIT HERE" << std::endl;
     float val = FloatVal;
     TOKEN float_token = CurTok;
     getNextToken(); //eat float_lit
@@ -1277,14 +1307,14 @@ static std::unique_ptr<ASTnode> ParseElement() {
 }
 
 static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
-  if (match(COMMA, ",")) {
+  if (CurTok.type == COMMA) {
     getNextToken(); // eat ,
     auto arg_list = ParseArgList();
     if (arg_list) {
       return arg_list->getArgs();
     }
   }
-  else if (match(RPAR,")")) { //PREDICT(arg_list_prime ::= ε) = {')'}
+  else if (CurTok.type == RPAR) { //PREDICT(arg_list_prime ::= ε) = {')'}
     getNextToken(); //eat )
     return {};
   } else return LogErrorVector<ExpressionASTnode>(CurTok, "Expectecd one of ',' or ')'");
@@ -1292,10 +1322,11 @@ static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
 
 static std::unique_ptr<ArgumentListASTnode> ParseArgList() {
   std::vector<std::unique_ptr<ExpressionASTnode>> arg_list;
-
   auto expr = ParseExpr();
   if (expr) {
+    std::cout << "in parsing arg list expr is valid" << std::endl; 
     arg_list.push_back(std::move(expr));
+    std::cout << "pushback worked the expr is" << expr->to_string() << std::endl;
     auto arg_list_prime = ParseArgListPrime();
     for (int i = 0; i < arg_list_prime.size(); i++) {
       arg_list.push_back(std::move(arg_list_prime.at(i)));
@@ -1319,8 +1350,6 @@ static std::unique_ptr<ArgumentsASTnode> ParseArgs() {
 
 static std::unique_ptr<ExpressionASTnode> ParseExpr() {
   TOKEN lookahead1 = lookahead(1);
-  std::cout << "Curtok is " << CurTok.lexeme.c_str() << std::endl;
-  std::cout << "lookahead 1 is" << lookahead1.lexeme.c_str() << std::endl;
 
   if (lookahead1.type == ASSIGN) { //expand by expr ::= IDENT "=" expr
     if (match(IDENT,"Identifier")) {
@@ -1328,12 +1357,12 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
       getNextToken(); //eat identifier
       getNextToken(); //eat =     //we know this from lookahead
       auto expr = ParseExpr();
-      std::cout << "the expr is ParseExpr is " << expr->to_string() << std::endl;
       if (expr) //depending on if expression is another assign or binop return that node
         return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
     }
   }
   else {
+    
     auto rval = ParseRval();
     if (rval)
       return std::make_unique<ExpressionASTnode>(std::move(rval));
@@ -1348,7 +1377,6 @@ static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
     //PREDICT(expr_stmt ::= expr ;) = { IDENT, "-", "!", "(", int_lit, float_lit, bool_lit}
     //however this parse function is only called if we know the current token is an element of PREDICT(expr_stmt ::= expr ;)
     auto expr = ParseExpr();
-    std::cout << expr->to_string() << std::endl;
     if (expr) {
       if (match(SC,";")) {
         getNextToken(); //eat ;
@@ -1385,14 +1413,15 @@ static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
       getNextToken(); //eat (
       auto expr = ParseExpr(); //eats expr
       if (expr) {
-        std::cout << "in the if statement the expr is" << expr->to_string() << std::endl;
         if (match(RPAR,")")) {
           getNextToken(); //eat )
+          std::cout << "ate )" << std::endl;
           auto block = ParseBlock();
           if (block) {
             std::cout << "block is valid" << std::endl;
             auto else_stmt = ParseElseStmt();
             if (else_stmt) {
+              std::cout << "else stmt is valid" << std::endl;
               return nullptr; 
             }
               //return make_unique<IfStatementASTnode>
@@ -1419,6 +1448,7 @@ static std::unique_ptr<StatementASTnode> ParseStmt() {
   else if (CurTok.type == IF) { //PREDICT(stmt ::= if_stmt) = {"if"}
     auto if_stmt = ParseIfStmt();
     
+    
   } 
   else if (CurTok.type == WHILE) { //PREDICT(stmt ::= while_stmt) = {"while"}
     
@@ -1440,7 +1470,6 @@ static std::unique_ptr<StatementListASTnode> ParseStmtList() {
     //{"{", ";", "if", "while", "return", IDENT, "-", "not", "(", int_lit, float_lit, bool_lit }
     auto stmt = ParseStmt();
     if (stmt) {
-      std::cout << stmt->to_string() << std::endl;
       stmt_list.push_back(std::move(stmt));
       auto stmt_list_prime = ParseStmtList();
 
