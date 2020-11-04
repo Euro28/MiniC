@@ -585,13 +585,7 @@ public:
     return std::move(Stmt_list);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    for (int i = 0; i < Stmt_list.size(); i++) {
-      ss << Stmt_list.at(i)->to_string();
-    }
-    return ss.str();
-  }
+  std::string to_string() const override;
 
   virtual Value *codegen() override {};
 };
@@ -1107,6 +1101,14 @@ public:
   }
 
 };
+
+std::string StatementListASTnode::to_string() const {
+  std::stringstream ss;
+    for (int i = 0; i < Stmt_list.size(); i++) {
+      ss << Stmt_list.at(i)->to_string();
+    }
+  return ss.str();
+}
 
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
