@@ -11,8 +11,6 @@ extern int lineNo, columnNo;
 
 extern FILE *pFile;
 
-
-
 struct TOKEN {
   int type = -100;
   std::string lexeme;
