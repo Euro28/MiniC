@@ -427,6 +427,7 @@ class ReturnStatementASTnode;
 class WhileStatementASTnode;
 class ExpressionASTnode;
 class ArgumentListASTnode;
+class StatementListASTnode;
 
 /// ASTnode - Base class for all AST nodes.
 class ASTnode {
@@ -501,7 +502,7 @@ public:
   : Rval(std::move(rval)) {}
 
   std::string to_string() const override {
-    if (Rval != nullptr) {
+    if (Rval) {
       return Rval->to_string();
     }
     std::string result = "The Expression is ";
@@ -528,35 +529,48 @@ public:
   std::string to_string() const override {
     if (!Colon)
       return Expr->to_string();
+    else return ";";
   }
 
   virtual Value *codegen() override {};
 };
 
-class StatementASTnode : public ASTnode {
-  //this is either an expr_stmt, if, while, block, or return stmt
-  std::unique_ptr<IfStatementASTnode> If_stmt;
-  std::unique_ptr<BlockASTnode> Block;
-  std::unique_ptr<ExpresssionStatementASTnode> Expr_stmt;
-  std::unique_ptr<WhileStatementASTnode> While_stmt;
-  std::unique_ptr<ReturnStatementASTnode> Return_stmt;
+class ReturnStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
 
 public:
-  StatementASTnode(std::unique_ptr<ReturnStatementASTnode> return_stmt)
-  : Return_stmt(std::move(return_stmt)) {}
+  virtual Value *codegen() override {};
 
-  StatementASTnode(std::unique_ptr<ExpresssionStatementASTnode> expr_stmt)
-  : Expr_stmt(std::move(expr_stmt)) {}
+  ReturnStatementASTnode(std::unique_ptr<ExpressionASTnode> expr)
+  : Expr(std::move(expr)) {}
 
-  StatementASTnode(std::unique_ptr<IfStatementASTnode> if_stmt)
-  : If_stmt(std::move(if_stmt)) {}
+  ReturnStatementASTnode() {}
 
   std::string to_string() const override {
-    if (Expr_stmt) {
-      return Expr_stmt->to_string();
+    if (Expr) {
+      std::stringstream ss;
+      ss << "return " << Expr->to_string() << ";";
+      return ss.str();
     }
+    return "return ;";
   }
+};
+
+class WhileStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  std::unique_ptr<StatementASTnode> Stmt;
+
+public:
   virtual Value *codegen() override {};
+
+  WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt)
+  : Expr(std::move(expr)), Stmt(std::move(stmt)) {}
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << "This is a while statement";
+    return ss.str();
+  }
 };
 
 class StatementListASTnode : public ASTnode {
@@ -600,6 +614,91 @@ public:
   }
 
 };
+
+class ElseStatementASTnode : public ASTnode  {
+  std::unique_ptr<BlockASTnode> Block;
+
+public:
+  virtual Value *codegen() override {};
+
+  ElseStatementASTnode(std::unique_ptr<BlockASTnode> block)
+  : Block(std::move(block)) {}
+
+  ElseStatementASTnode() {}
+
+  std::string to_string() const override {
+    if (Block) {
+      return Block->to_string();
+    }
+    return "";
+  }
+
+};
+
+class IfStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  std::unique_ptr<BlockASTnode> Block;
+  std::unique_ptr<ElseStatementASTnode> Else;
+
+public:
+  virtual Value *codegen() override {};
+  
+  IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
+  std::unique_ptr<ElseStatementASTnode> else_ptr) 
+  : Expr(std::move(expr)), Block(std::move(block)), Else(std::move(else_ptr)) {}
+
+  std::string to_string() const override {
+    std::stringstream ss;
+    ss << "if (" << Expr->to_string() << " ) " << Block->to_string() << " else " << Else->to_string();
+    return ss.str();
+  };
+
+};
+
+class StatementASTnode : public ASTnode {
+  //this is either an expr_stmt, if, while, block, or return stmt
+  std::unique_ptr<IfStatementASTnode> If_stmt;
+  std::unique_ptr<BlockASTnode> Block;
+  std::unique_ptr<ExpresssionStatementASTnode> Expr_stmt;
+  std::unique_ptr<WhileStatementASTnode> While_stmt;
+  std::unique_ptr<ReturnStatementASTnode> Return_stmt;
+
+public:
+  StatementASTnode(std::unique_ptr<ReturnStatementASTnode> return_stmt)
+  : Return_stmt(std::move(return_stmt)) {}
+
+  StatementASTnode(std::unique_ptr<ExpresssionStatementASTnode> expr_stmt)
+  : Expr_stmt(std::move(expr_stmt)) {}
+
+  StatementASTnode(std::unique_ptr<IfStatementASTnode> if_stmt)
+  : If_stmt(std::move(if_stmt)) {}
+
+  StatementASTnode(std::unique_ptr<BlockASTnode> block)
+  : Block(std::move(block)) {}
+
+  StatementASTnode(std::unique_ptr<WhileStatementASTnode> while_stmt)
+  : While_stmt(std::move(while_stmt)) {}
+
+  std::string to_string() const override {
+    if (Expr_stmt) {
+      return Expr_stmt->to_string();
+    } 
+    else if (Block) {
+      return Block->to_string();
+    }
+    else if (If_stmt) {
+      return If_stmt->to_string();
+    }
+    else if (While_stmt) {
+      return While_stmt->to_string();
+    } 
+    else if (Return_stmt) {
+      return Return_stmt->to_string();
+    }
+  }
+  virtual Value *codegen() override {};
+};
+
 
 class ParameterASTnode : public ASTnode {
   int Type;
@@ -858,71 +957,9 @@ public:
   }
 };
 
-class ElseStatementASTnode : public ASTnode  {
-  std::unique_ptr<BlockASTnode> Block;
 
-public:
-  virtual Value *codegen() override {};
 
-  ElseStatementASTnode(std::unique_ptr<BlockASTnode> block)
-  : Block(std::move(block)) {}
 
-  ElseStatementASTnode() {}
-
-  std::string to_string() const override {
-    if (Block) {
-      return Block->to_string();
-    }
-    return "";
-  }
-
-};
-
-class IfStatementASTnode : public ASTnode {
-  std::unique_ptr<ExpressionASTnode> Expr;
-  std::unique_ptr<BlockASTnode> Block;
-  std::unique_ptr<ElseStatementASTnode> Else;
-
-public:
-  virtual Value *codegen() override {};
-  
-  IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
-  std::unique_ptr<ElseStatementASTnode> else_ptr) 
-  : Expr(std::move(expr)), Block(std::move(block)), Else(std::move(else_ptr)) {}
-
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << "if (" << Expr->to_string() << " ) " << Block->to_string() << " else " << Else->to_string();
-    return ss.str();
-  };
-
-};
-
-class WhileStatementASTnode : public ASTnode {
-  //just an expression which evaluates
-  //and a stmt which executes if expr is true
-};
-
-class ReturnStatementASTnode : public ASTnode {
-  std::unique_ptr<ExpressionASTnode> Expr;
-
-public:
-  virtual Value *codegen() override {};
-
-  ReturnStatementASTnode(std::unique_ptr<ExpressionASTnode> expr)
-  : Expr(std::move(expr)) {}
-
-  ReturnStatementASTnode() {}
-
-  std::string to_string() const override {
-    if (Expr) {
-      std::stringstream ss;
-      ss << "return " << Expr->to_string() << ";";
-      return ss.str();
-    }
-    return "return ;";
-  }
-};
 
 
 class BinExpressionASTnode : public ASTnode {
@@ -1031,6 +1068,10 @@ class BoolASTnode : public ASTnode {
 public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
+
+  std::string to_string() const override {
+    return std::to_string(Val);
+  }
 };
 
 class IdentASTnode : public ASTnode {
@@ -1130,6 +1171,7 @@ static std::unique_ptr<ASTnode> ParseElement();
 static std::unique_ptr<ArgumentListASTnode> ParseArgList();
 static std::unique_ptr<ExpressionASTnode> ParseExpr();
 static std::unique_ptr<ArgumentsASTnode> ParseArgs();
+static std::unique_ptr<StatementASTnode> ParseStmt();
 
 static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
   if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
@@ -1359,7 +1401,6 @@ static std::unique_ptr<ASTnode> ParseSubExprPrime(std::unique_ptr<ASTnode> facto
   return nullptr;
 }
 
-
 static std::unique_ptr<ASTnode> ParseFactor() {
   auto element = ParseElement();
   if (element) {
@@ -1437,6 +1478,8 @@ static std::unique_ptr<ASTnode> ParseElement() {
   } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
   return nullptr;
 }
+
+
 
 static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
   if (CurTok.type == COMMA) {
@@ -1576,6 +1619,24 @@ static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
   return nullptr;
 }
 
+static std::unique_ptr<WhileStatementASTnode> ParseWhileStmt() {
+  if (CurTok.type == WHILE) {
+    getNextToken(); //eat while
+    if (match(LPAR,"(")) {
+      getNextToken(); //eat (
+      auto expr = ParseExpr();
+      if (expr) {
+        if (match(RPAR,")")) {
+          getNextToken(); //eat )
+          auto stmt = ParseStmt();
+          if (stmt)
+            return std::make_unique<WhileStatementASTnode>(std::move(expr),std::move(stmt));
+        }
+      }
+    }
+  }
+}
+
 static std::unique_ptr<StatementASTnode> ParseStmt() {
   if (CurTok.type == SC || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
   CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || 
@@ -1586,16 +1647,19 @@ static std::unique_ptr<StatementASTnode> ParseStmt() {
       return std::make_unique<StatementASTnode>(std::move(expr_stmt));
   }
   else if (CurTok.type == LBRA) { //PREDICT(stmt ::= block) = {"{"}
-      
+    auto block = ParseBlock();
+    if (block)
+      return std::make_unique<StatementASTnode>(std::move(block));
   } 
   else if (CurTok.type == IF) { //PREDICT(stmt ::= if_stmt) = {"if"}
     auto if_stmt = ParseIfStmt();
     if (if_stmt)
       return std::make_unique<StatementASTnode>(std::move(if_stmt));
-    
   } 
   else if (CurTok.type == WHILE) { //PREDICT(stmt ::= while_stmt) = {"while"}
-    
+    auto while_stmt = ParseWhileStmt();
+    if (while_stmt)
+      return std::make_unique<StatementASTnode>(std::move(while_stmt));
   } 
   else if (CurTok.type == RETURN) {//PREDICT(stmt ::= return_stmt) = {"return"}
     auto return_stmt = ParseReturnStmt();
