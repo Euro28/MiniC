@@ -755,13 +755,14 @@ std::vector<std::unique_ptr<T>> LogErrorVector(TOKEN tok, const std::string &Str
   return {};
 }
 
-//matching terminals and in case of failure output message saves 
-// repeated lines of code
-static bool match(int match, const std::string &name) {
+//If you simply use Curtok.type == x 
+//whenever that fails you need a specific error output
+//this prevents replication of that error output.
+static bool match(int match) {
   if (CurTok.type == match) 
     return true;
   std::string result = "Expected ";
-  result += name;
+  result += type_to_string(match);
 
   LogError(CurTok,result);
 }
@@ -871,7 +872,7 @@ static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
 }
 
 static std::unique_ptr<BlockASTnode> ParseBlock() {
-  if (match(LBRA, "{")) {
+  if (match(LBRA)) {
     getNextToken(); //eat {
     auto local_decls = ParseLocalDecls();
     if (local_decls) {
@@ -1068,7 +1069,7 @@ static std::unique_ptr<ASTnode> ParseElement() {
     getNextToken(); // eat (
     auto args = ParseArgs();
     if (args) {
-      if (match(RPAR,")")) {
+      if (match(RPAR)) {
         getNextToken(); //eat )
         return std::make_unique<FunctionCallASTnode>(ident, std::move(args));
       }
@@ -1153,7 +1154,7 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
   TOKEN lookahead1 = lookahead(1);
 
   if (lookahead1.type == ASSIGN) { //expand by expr ::= IDENT "=" expr
-    if (match(IDENT,"Identifier")) {
+    if (match(IDENT)) {
       std::string ident = IdentifierStr;
       getNextToken(); //eat identifier
       getNextToken(); //eat =     //we know this from lookahead
@@ -1178,7 +1179,7 @@ static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
     //however this parse function is only called if we know the current token is an element of PREDICT(expr_stmt ::= expr ;)
     auto expr = ParseExpr();
     if (expr) {
-      if (match(SC,";")) {
+      if (match(SC)) {
         getNextToken(); //eat ;
         return std::make_unique<ExpresssionStatementASTnode>(std::move(expr));
       }
@@ -1207,13 +1208,13 @@ static std::unique_ptr<ElseStatementASTnode> ParseElseStmt() {
 }
 
 static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
-  if (match(IF,"if")) {
+  if (match(IF)) {
     getNextToken(); // eat if
-    if (match(LPAR,"(")) {
+    if (match(LPAR)) {
       getNextToken(); //eat (
       auto expr = ParseExpr(); //eats expr
       if (expr) {
-        if (match(RPAR,")")) {
+        if (match(RPAR)) {
           getNextToken(); //eat )
           auto block = ParseBlock();
           if (block) {
@@ -1229,13 +1230,13 @@ static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
 }
 
 static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
-  if (match(RETURN, "return")) {
+  if (match(RETURN)) {
     getNextToken(); //eat return
     TOKEN lookahead1 = lookahead(1);
     if (lookahead1.type == SC) { //expr term
       auto expr = ParseExpr();
       if (expr) {
-        if (match(SC,";")) {
+        if (match(SC)) {
           getNextToken(); //eat sc
           return std::make_unique<ReturnStatementASTnode>(std::move(expr));
         }
@@ -1248,11 +1249,11 @@ static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
 static std::unique_ptr<WhileStatementASTnode> ParseWhileStmt() {
   if (CurTok.type == WHILE) {
     getNextToken(); //eat while
-    if (match(LPAR,"(")) {
+    if (match(LPAR)) {
       getNextToken(); //eat (
       auto expr = ParseExpr();
       if (expr) {
-        if (match(RPAR,")")) {
+        if (match(RPAR)) {
           getNextToken(); //eat )
           auto stmt = ParseStmt();
           if (stmt)
@@ -1352,14 +1353,14 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
 static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
   auto type = ParseTypeSpec();
   if (type) {
-    if (match(IDENT,"Identifier")) {
+    if (match(IDENT)) {
       std::string ident = IdentifierStr;
       getNextToken(); //eat ident
-      if (match(LPAR,"(")) {
+      if (match(LPAR)) {
         getNextToken(); //eat (
         auto params = ParseParams(); //eat params
         if (params) {
-          if (match(RPAR,")")) {
+          if (match(RPAR)) {
             getNextToken(); //eat )
             auto block = ParseBlock();
             if (block)
@@ -1391,7 +1392,7 @@ static std::unique_ptr<DeclarationASTnode> ParseDecl() {
   //and we should return that error message instead
   auto type = ParseTypeSpec();
   if (type) {
-    if (match(IDENT,"Identifier")) {
+    if (match(IDENT)) {
       getNextToken();
       return LogErrorPtr<DeclarationASTnode>(CurTok,"Expected one of ; or (");
     }
@@ -1403,10 +1404,10 @@ static std::unique_ptr<DeclarationASTnode> ParseDecl() {
 static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
   auto type = ParseVarType(); //eat type
   if (type) {
-    if (match(IDENT, "Identifier")) {
+    if (match(IDENT)) {
       std::string ident = IdentifierStr;
       getNextToken(); //eat ident
-      if (match(SC, ";")) {
+      if (match(SC)) {
         getNextToken(); //eat ;
         return std::make_unique<VariableDeclarationASTnode>(type->getType(), ident);
       }
@@ -1444,20 +1445,20 @@ static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime() {
 }
 
 static std::unique_ptr<ExternASTnode> ParseExtern() {
-  if (match(EXTERN, "extern")) {
+  if (match(EXTERN)) {
     getNextToken(); //eat extern
     auto type = ParseTypeSpec();
     if (type) {
-      if (match(IDENT, "identifier")) {
+      if (match(IDENT)) {
         std::string ident = IdentifierStr;
         getNextToken(); //eat IDENT
-        if (match(LPAR, "(")) {
+        if (match(LPAR)) {
           getNextToken(); //eat (
           auto params = ParseParams(); // eats all characters in parameter PLEASE MAKE ERROR MESSAGES FOR PARAMS
           if (params) { //params still returns null pointer
-            if (match(RPAR, ")")) {
+            if (match(RPAR)) {
               getNextToken(); //eat )
-              if (match(SC, ";")) {
+              if (match(SC)) {
                 getNextToken(); //eat ;
                 return std::make_unique<ExternASTnode>(type->getType(), ident, std::move(params));
               }
@@ -1515,7 +1516,7 @@ static std::vector<std::unique_ptr<ParameterASTnode>> ParseParamListPrime() {
 static std::unique_ptr<ParameterASTnode> ParseParam() {
   auto type = ParseVarType(); //eats the variable type
   if (type) {
-    if (match(IDENT, "Identifier")) {
+    if (match(IDENT)) {
       std::string str = IdentifierStr;
       getNextToken(); // eat ident
       return std::make_unique<ParameterASTnode>(type->getType(), str);
