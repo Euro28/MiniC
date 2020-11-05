@@ -37,9 +37,190 @@
 #include <sstream>
 #include "AST.h"
 
+
 using namespace llvm;
 using namespace llvm::sys;
 
+//===----------------------------------------------------------------------===//
+// AST nodes - to_string for AST output (putting them all in one place makes it easier to tailor)
+//===----------------------------------------------------------------------===//
+
+std::string ExternListASTnode::to_string(int level) const {
+  std::stringstream ss;
+  for (int i=0;i < List_Extern.size(); i++) {
+    ss << "|-FunctionDecl used" << List_Extern.at(i)->to_string(level);
+  }
+  return ss.str();
+}
+
+std::string ExternASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << " " << Identifier << " '" << type_to_string(Token_type) << " (" << Params->list_types() << ")' extern" << std::endl;
+  ss << Params->to_string(level);
+  return ss.str();
+}
+
+std::string ParamsASTnode::to_string(int level) const {
+  std::stringstream ss;
+    for (int i = 0; i < Params.size(); i++) {
+      ss << " | `-ParmVarDecl " << Params.at(i)->to_string(level) << std::endl;
+    }
+  return ss.str();
+}
+
+std::string ParameterASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << Ident << " '" << type_to_string(Type) << "'";
+  return ss.str();
+}
+
+std::string BlockASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << Local_decls->to_string(level) << std::endl << Stmt_list->to_string(level);
+  return ss.str();
+}
+
+std::string LocalDeclarationsASTnode::to_string(int level) const {
+  std::stringstream ss;
+    for (int i = 0; i < Local_decls.size(); i++) {
+      ss << "   |-VarDecl used " << Local_decls.at(i)->to_string(level) ;
+    }
+  return ss.str();
+}
+
+std::string StatementListASTnode::to_string(int level) const {
+  std::stringstream ss;
+    for (int i = 0; i < Stmt_list.size(); i++) {
+      ss << Stmt_list.at(i)->to_string(level);
+    }
+  return ss.str();
+}
+
+std::string StatementASTnode::to_string(int level) const {
+  if (Expr_stmt) {
+    return Expr_stmt->to_string(level);
+  } 
+  else if (Block) {
+    return Block->to_string(level);
+  }
+  else if (If_stmt) {
+    return If_stmt->to_string(level);
+  }
+  else if (While_stmt) {
+    return While_stmt->to_string(level);
+  } 
+  else if (Return_stmt) {
+    return Return_stmt->to_string(level);
+  }
+}
+
+std::string ExpressionASTnode::to_string(int level) const {
+    if (Rval) {
+      return Rval->to_string(level);
+    }
+    std::stringstream ss;
+    std::string result = "The Expression is ";
+    result += AssignLHS;
+    result += " = ";
+    result += Assign->to_string(level);
+    return result;
+}
+
+std::string VariableDeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << Identifier << " '" << type_to_string(Var_type) << "'";
+  return ss.str();
+}
+
+
+std::string ReturnStatementASTnode::to_string(int level) const {
+  if (Expr) {
+      std::stringstream ss;
+      ss << "return " << Expr->to_string(level) << ";";
+      return ss.str();
+    }
+  return "return ;";
+}
+
+std::string WhileStatementASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << "This is a while statement";
+  return ss.str();
+}
+
+
+
+std::string ElseStatementASTnode::to_string(int level) const {
+  if (Block) {
+      return Block->to_string(level);
+    }
+  return "";
+}
+
+std::string IfStatementASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << "if (" << Expr->to_string(level) << " ) " << Block->to_string(level) << " else " << Else->to_string(level);
+  return ss.str();
+}
+
+
+
+std::string FunctionDeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << Identifier << "'" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
+  ss << Params->to_string(level);
+  if (Block)
+    ss << " `-BlockStatement" << std::endl << Block->to_string(level);
+
+    //output local decls
+      //out stmt list
+  return ss.str();
+}
+
+std::string DeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+  if (Var_decl)
+    ss << "|-VarDecl " << Var_decl->to_string(level);
+  if (Fun_decl) 
+    ss << "`-FunctionDecl " << Fun_decl->to_string(level);
+    
+  return ss.str();
+}
+
+std::string DeclarationListASTnode::to_string(int level) const {
+  std::stringstream ss;
+  for (int i = 0; i < List_decl.size(); i++) {
+    ss << List_decl.at(i)->to_string(level);
+    if (i != List_decl.size()-1)
+      ss << std::endl;
+  }
+  return ss.str();
+}
+
+
+std::string BinExpressionASTnode::to_string(int level) const {
+  std::string result;
+  result += LHS->to_string(level);
+  result += type_to_string(Op);
+  result += RHS->to_string(level);
+  return result;
+}
+
+std::string ArgumentListASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << "(";
+  for (int i = 0; i<Arg_list.size(); i++) {
+    ss << Arg_list.at(i)->to_string(level);
+  }
+  ss << ")";
+  return ss.str();
+}
+
+std::string FunctionCallASTnode::to_string(int level) const {
+  std::string result = Name;
+  result += Args->to_string(level);
+  return result;
+}
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
 //===----------------------------------------------------------------------===//
@@ -837,7 +1018,7 @@ static void parser() {
   // add body
   getNextToken();
   auto program = ParseProgram();
-  std::cout << program->to_string() << std::endl;
+  std::cout << program->to_string(0) << std::endl;
 }
 
 /*Supply an look ahead value and returns the token at that lookahead*/
@@ -873,7 +1054,7 @@ static std::unique_ptr<Module> TheModule;
 
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
                                      const ASTnode &ast) {
-  os << ast.to_string();
+  os << ast.to_string(0);
   return os;
 }
 

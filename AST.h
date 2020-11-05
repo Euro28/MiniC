@@ -10,7 +10,7 @@ class ASTnode {
 public:
   virtual ~ASTnode() {}
   virtual Value *codegen() = 0;
-  virtual std::string to_string() const {};
+  virtual std::string to_string(int level) const {};
 };
 
 //===----------------------------------------------------------------------===//
@@ -39,16 +39,9 @@ public:
   VariableDeclarationASTnode(int var_type, const std::string &identifier)
   : Var_type(var_type), Identifier(identifier) {}
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << Identifier << " '" << type_to_string(Var_type) << "'";
-    return ss.str();
-  }
-
+  std::string to_string(int level) const override;
   std::string getId() { return Identifier;}
-
   int getType() {return Var_type;}
-
 
   virtual Value *codegen() override {};
 };
@@ -64,17 +57,7 @@ public:
   std::vector<std::unique_ptr<VariableDeclarationASTnode>> getDecls() {
     return std::move(Local_decls);
   }
-
-  std::string to_string() const override {
-    std::stringstream ss;
-    for (int i = 0; i < Local_decls.size(); i++) {
-      ss << "   |-VarDecl used " << Local_decls.at(i)->to_string() ;
-    }
-    return ss.str();
-  }
-
-
-
+  std::string to_string(int level) const override;
   virtual Value *codegen() override {};
 };
 
@@ -94,16 +77,7 @@ public:
   ExpressionASTnode(std::unique_ptr<ASTnode> rval)
   : Rval(std::move(rval)) {}
 
-  std::string to_string() const override {
-    if (Rval) {
-      return Rval->to_string();
-    }
-    std::string result = "The Expression is ";
-    result += AssignLHS;
-    result += " = ";
-    result += Assign->to_string();
-    return result;
-  }
+  std::string to_string(int level) const override;
 
   virtual Value *codegen() override {};
  
@@ -119,9 +93,9 @@ public:
 
   ExpresssionStatementASTnode(bool colon) : Colon(colon) {}
 
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     if (!Colon)
-      return Expr->to_string();
+      return Expr->to_string(level);
     else return ";";
   }
 
@@ -139,14 +113,7 @@ public:
 
   ReturnStatementASTnode() {}
 
-  std::string to_string() const override {
-    if (Expr) {
-      std::stringstream ss;
-      ss << "return " << Expr->to_string() << ";";
-      return ss.str();
-    }
-    return "return ;";
-  }
+  std::string to_string(int level) const override;
 };
 
 class WhileStatementASTnode : public ASTnode {
@@ -159,11 +126,7 @@ public:
   WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt)
   : Expr(std::move(expr)), Stmt(std::move(stmt)) {}
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << "This is a while statement";
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 };
 
 class StatementListASTnode : public ASTnode {
@@ -178,7 +141,7 @@ public:
     return std::move(Stmt_list);
   }
 
-  std::string to_string() const override;
+  std::string to_string(int level) const override;
 
   virtual Value *codegen() override {};
 };
@@ -194,11 +157,7 @@ public:
   BlockASTnode(std::unique_ptr<LocalDeclarationsASTnode> local_decls, std::unique_ptr<StatementListASTnode> stmt_list)
   : Local_decls(std::move(local_decls)), Stmt_list(std::move(stmt_list)) {}
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << Local_decls->to_string() << std::endl << Stmt_list->to_string();
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 
 };
 
@@ -213,13 +172,7 @@ public:
 
   ElseStatementASTnode() {}
 
-  std::string to_string() const override {
-    if (Block) {
-      return Block->to_string();
-    }
-    return "";
-  }
-
+  std::string to_string(int level) const override;
 };
 
 class IfStatementASTnode : public ASTnode {
@@ -234,11 +187,7 @@ public:
   std::unique_ptr<ElseStatementASTnode> else_ptr) 
   : Expr(std::move(expr)), Block(std::move(block)), Else(std::move(else_ptr)) {}
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << "if (" << Expr->to_string() << " ) " << Block->to_string() << " else " << Else->to_string();
-    return ss.str();
-  };
+  std::string to_string(int level) const override;
 
 };
 
@@ -266,23 +215,7 @@ public:
   StatementASTnode(std::unique_ptr<WhileStatementASTnode> while_stmt)
   : While_stmt(std::move(while_stmt)) {}
 
-  std::string to_string() const override {
-    if (Expr_stmt) {
-      return Expr_stmt->to_string();
-    } 
-    else if (Block) {
-      return Block->to_string();
-    }
-    else if (If_stmt) {
-      return If_stmt->to_string();
-    }
-    else if (While_stmt) {
-      return While_stmt->to_string();
-    } 
-    else if (Return_stmt) {
-      return Return_stmt->to_string();
-    }
-  }
+  std::string to_string(int level) const override;
   virtual Value *codegen() override {};
 };
 
@@ -301,11 +234,7 @@ public:
 
   std::string getIdent() {return Ident;}
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << Ident << " '" << type_to_string(Type) << "'";
-    return ss.str();
-  };
+  std::string to_string(int level) const override;
 
 };
 
@@ -331,13 +260,7 @@ public:
     return std::move(Params);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    for (int i = 0; i < Params.size(); i++) {
-      ss << " | `-ParmVarDecl " << Params.at(i)->to_string() << std::endl;
-    }
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 
   std::string list_types() const {
     std::string result;
@@ -370,17 +293,7 @@ public:
     return std::move(Params);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << Identifier << "'" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
-    ss << Params->to_string();
-    if (Block)
-      ss << " `-BlockStatement" << std::endl << Block->to_string();
-
-    //output local decls
-      //out stmt list
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 };
 
 class DeclarationASTnode : public ASTnode {
@@ -404,18 +317,7 @@ public:
     return std::move(Fun_decl);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    if (Var_decl)
-      ss << "|-VarDecl " << Var_decl->to_string();
-    if (Fun_decl) 
-      ss << "`-FunctionDecl " << Fun_decl->to_string();
-    
-    return ss.str();
-    
-  }
-
-
+  std::string to_string(int level) const override;
 };
 
 class DeclarationListASTnode : public ASTnode {
@@ -432,19 +334,10 @@ public:
     return std::move(List_decl);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    for (int i = 0; i < List_decl.size(); i++) {
-      ss << List_decl.at(i)->to_string();
-      if (i != List_decl.size()-1)
-        ss << std::endl;
-    }
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 
   DeclarationListASTnode() {}
 };
-
 
 class ExternASTnode: public ASTnode {
   int Token_type;
@@ -459,16 +352,9 @@ public:
     return Identifier;
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << " " << Identifier << " '" << type_to_string(Token_type) << " (" << Params->list_types() << ")' extern" << std::endl;
-    ss << Params->to_string();
-    return ss.str();
-  }
-
+  std::string to_string(int level) const override;
 
   virtual Value *codegen() override {};
-
 };
 
 class ExternListASTnode : public ASTnode { //seg fault is caused by defining the pointers of List_Extern but
@@ -487,13 +373,7 @@ public:
 
   virtual Value *codegen() override {};
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    for (int i=0;i < List_Extern.size(); i++) {
-      ss << "|-FunctionDecl used" << List_Extern.at(i)->to_string();
-    }
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 
   //will contain a vector of externs
 };
@@ -512,9 +392,9 @@ public:
   : Decl_list(std::move(decl_list)) {}
   virtual Value *codegen() override {};
 
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     std::stringstream ss;
-    ss << Extern_list->to_string() << Decl_list->to_string();
+    ss << Extern_list->to_string(level) << Decl_list->to_string(level);
     return ss.str();
   }
 };
@@ -553,17 +433,9 @@ public:
   BinExpressionASTnode(std::unique_ptr<ASTnode> lhs, int op, std::unique_ptr<ASTnode> rhs)
   : LHS(std::move(lhs)), Op(op), RHS(std::move(rhs)) {}
 
-  std::string to_string() const override {
-    std::string result;
-    result += LHS->to_string();
-    result += type_to_string(Op);
-    result += RHS->to_string();
-    return result;
-  }
+  std::string to_string(int level) const override;
   
-
   virtual Value *codegen() override {};
-
 };
 
 /*List(vector) of arguments which are just expressions*/
@@ -580,15 +452,7 @@ public:
     return std::move(Arg_list);
   }
 
-  std::string to_string() const override {
-    std::stringstream ss;
-    ss << "(";
-    for (int i = 0; i<Arg_list.size(); i++) {
-      ss << Arg_list.at(i)->to_string();
-    }
-    ss << ")";
-    return ss.str();
-  }
+  std::string to_string(int level) const override;
 };
 
 
@@ -608,7 +472,7 @@ public:
     return std::move(Arg_list);
   }
 
-  std::string to_string() const override {return Arg_list->to_string();}
+  std::string to_string(int level) const override {return Arg_list->to_string(level);}
 };
 
 // IntASTnode - Class for integer literals like 1, 2, 10,
@@ -623,7 +487,7 @@ public:
   // virtual std::string to_string() const override {
   // return a sting representation of this AST node
   //};
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     return std::to_string(Val);
   }
 };
@@ -637,7 +501,7 @@ public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
 
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     return std::to_string(Val);
   }
 };
@@ -652,7 +516,7 @@ public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
 
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     return std::to_string(Val);
   }
 };
@@ -667,7 +531,7 @@ public:
 
   virtual Value *codegen() override {};
 
-  std::string to_string() const override {
+  std::string to_string(int level) const override {
     return Name;
   }
 };
@@ -683,20 +547,12 @@ public:
   FunctionCallASTnode(const std::string &name, std::unique_ptr<ArgumentsASTnode> args)
   : Name(name), Args(std::move(args)) {}
 
-  std::string to_string() const override {
-    std::string result = Name;
-    result += Args->to_string();
-    return result;
-  }
+  std::string to_string(int level) const override;
 
 };
 
-std::string StatementListASTnode::to_string() const {
-  std::stringstream ss;
-    for (int i = 0; i < Stmt_list.size(); i++) {
-      ss << Stmt_list.at(i)->to_string();
-    }
-  return ss.str();
-}
+class UnaryOperatorASTnode : public ASTnode {
+
+};
 
 #endif

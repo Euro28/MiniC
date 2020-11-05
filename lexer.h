@@ -1,6 +1,8 @@
 #ifndef LEXER_H
 #define LEXER_H
 
+#include <string>
+#include <deque>
 //===----------------------------------------------------------------------===//
 // Lexer
 //===----------------------------------------------------------------------===//
@@ -372,5 +374,6 @@ TOKEN getNextToken() {
 }
 
 void putBackToken(TOKEN tok) { tok_buffer.push_front(tok); }
+
 
 #endif
