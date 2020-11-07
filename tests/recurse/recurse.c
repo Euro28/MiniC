@@ -19,6 +19,6 @@ int addNumbers(int n)
 }
 
 int recursion_driver(int num) {    
-    return addNumbers(num);    
+    return; 
 }
 
