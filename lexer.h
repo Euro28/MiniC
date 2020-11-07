@@ -89,6 +89,22 @@ const char* type_to_string(int type) {
     case LT: return "<";
     case GE: return ">=";
     case GT: return ">";
+    case IDENT: return "identifier";
+    case ASSIGN: return "=";
+    case LBRA: return "{";
+    case RBRA: return "}";
+    case LPAR: return "(";
+    case RPAR: return ")";
+    case SC: return ";";
+    case COMMA: return ",";
+    case EXTERN: return "extern";
+    case IF: return "if";
+    case ELSE: return "else";
+    case WHILE: return "while";
+    case RETURN: return "return";
+
+  
+
   }
 }
 

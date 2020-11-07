@@ -45,10 +45,13 @@ using namespace llvm::sys;
 // AST nodes - to_string for AST output (putting them all in one place makes it easier to tailor)
 //===----------------------------------------------------------------------===//
 
+
 std::string ExternListASTnode::to_string(int level) const {
   std::stringstream ss;
+  if (List_Extern.empty())
+    return "";
   for (int i=0;i < List_Extern.size(); i++) {
-    ss << "|-FunctionDecl used" << List_Extern.at(i)->to_string(level);
+    ss << "|-FunctionDecl used" << List_Extern.at(i)->to_string(level+1);
   }
   return ss.str();
 }
@@ -63,7 +66,7 @@ std::string ExternASTnode::to_string(int level) const {
 std::string ParamsASTnode::to_string(int level) const {
   std::stringstream ss;
     for (int i = 0; i < Params.size(); i++) {
-      ss << " | `-ParmVarDecl " << Params.at(i)->to_string(level) << std::endl;
+      ss << indent(level) << "|`-ParmVarDecl " << Params.at(i)->to_string(level) << std::endl;
     }
   return ss.str();
 }
@@ -74,16 +77,58 @@ std::string ParameterASTnode::to_string(int level) const {
   return ss.str();
 }
 
+
+
+std::string DeclarationListASTnode::to_string(int level) const {
+  std::stringstream ss;
+  for (int i = 0; i < List_decl.size(); i++) { //function or variable declarations
+    ss << List_decl.at(i)->to_string(level);
+  }
+  return ss.str();
+}
+
+std::string DeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+
+  if (Var_decl) //global variable declaration there is never an indent
+    ss << Var_decl->to_string(level);
+  if (Fun_decl) 
+    ss << Fun_decl->to_string(level);
+    
+  return ss.str();
+}
+
+std::string VariableDeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-VarDecl " << Identifier << " '" << type_to_string(Var_type) << "'";
+  return ss.str();
+}
+
+std::string FunctionDeclarationASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-FunctionDecl" << Identifier << " '" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
+  ss << Params->to_string(level+1);
+  if (Block)
+    ss << Block->to_string(level+1);
+  return ss.str();
+}
+
 std::string BlockASTnode::to_string(int level) const {
   std::stringstream ss;
-  ss << Local_decls->to_string(level) << std::endl << Stmt_list->to_string(level);
+  ss << indent(level) << "|-BlockStmt "<< std::endl;
+  ss << Local_decls->to_string(level+1);
+
+  if (Stmt_list) 
+    ss << Stmt_list->to_string(level+1);
+  
   return ss.str();
 }
 
 std::string LocalDeclarationsASTnode::to_string(int level) const {
   std::stringstream ss;
     for (int i = 0; i < Local_decls.size(); i++) {
-      ss << "   |-VarDecl used " << Local_decls.at(i)->to_string(level) ;
+      ss << indent(level) << "|-LocalDeclStmt" << std::endl;
+      ss << Local_decls.at(i)->to_string(level+1) << std::endl;;
     }
   return ss.str();
 }
@@ -115,40 +160,35 @@ std::string StatementASTnode::to_string(int level) const {
 }
 
 std::string ExpressionASTnode::to_string(int level) const {
-    if (Rval) {
+    if (Rval) { //goes to one of binop, literal function call. eventually unary
       return Rval->to_string(level);
     }
-    std::stringstream ss;
-    std::string result = "The Expression is ";
-    result += AssignLHS;
-    result += " = ";
-    result += Assign->to_string(level);
-    return result;
-}
 
-std::string VariableDeclarationASTnode::to_string(int level) const {
-  std::stringstream ss;
-  ss << Identifier << " '" << type_to_string(Var_type) << "'";
-  return ss.str();
+    std::stringstream ss; //if here it is an assign 
+    ss << indent(level) << "|-BinaryOperator '='" << std::endl;
+    ss << indent(level+1) << "|-Identifier '"<< AssignLHS << "'" << std::endl;
+    ss  << Assign->to_string(level+1);
+    return ss.str();
 }
 
 
 std::string ReturnStatementASTnode::to_string(int level) const {
   if (Expr) {
       std::stringstream ss;
-      ss << "return " << Expr->to_string(level) << ";";
+      ss << indent(level) << "|-ReturnStmt " << std::endl;
+      ss << Expr->to_string(level+1);
       return ss.str();
     }
-  return "return ;";
+  return indent(level) + "|-ReturnStmt";
 }
 
 std::string WhileStatementASTnode::to_string(int level) const {
   std::stringstream ss;
-  ss << "This is a while statement";
+  ss << indent(level) << "|-WhileStmt" << std::endl;
+  ss << Expr->to_string(level+1);
+  ss << Stmt->to_string(level+1);
   return ss.str();
 }
-
-
 
 std::string ElseStatementASTnode::to_string(int level) const {
   if (Block) {
@@ -159,73 +199,84 @@ std::string ElseStatementASTnode::to_string(int level) const {
 
 std::string IfStatementASTnode::to_string(int level) const {
   std::stringstream ss;
-  ss << "if (" << Expr->to_string(level) << " ) " << Block->to_string(level) << " else " << Else->to_string(level);
-  return ss.str();
-}
-
-
-
-std::string FunctionDeclarationASTnode::to_string(int level) const {
-  std::stringstream ss;
-  ss << Identifier << "'" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
-  ss << Params->to_string(level);
-  if (Block)
-    ss << " `-BlockStatement" << std::endl << Block->to_string(level);
-
-    //output local decls
-      //out stmt list
-  return ss.str();
-}
-
-std::string DeclarationASTnode::to_string(int level) const {
-  std::stringstream ss;
-  if (Var_decl)
-    ss << "|-VarDecl " << Var_decl->to_string(level);
-  if (Fun_decl) 
-    ss << "`-FunctionDecl " << Fun_decl->to_string(level);
-    
-  return ss.str();
-}
-
-std::string DeclarationListASTnode::to_string(int level) const {
-  std::stringstream ss;
-  for (int i = 0; i < List_decl.size(); i++) {
-    ss << List_decl.at(i)->to_string(level);
-    if (i != List_decl.size()-1)
-      ss << std::endl;
-  }
+  ss << indent(level) << "|-IfStmt ";
+  if (Else)
+    ss << "has_else" << std::endl;
+  
+  ss << Expr->to_string(level+1) << Block->to_string(level+1);
+  ss << Else->to_string(level+1);
   return ss.str();
 }
 
 
 std::string BinExpressionASTnode::to_string(int level) const {
-  std::string result;
-  result += LHS->to_string(level);
-  result += type_to_string(Op);
-  result += RHS->to_string(level);
-  return result;
+  std::stringstream ss;
+
+  ss << indent(level) << "|-BinaryOperator " << type_to_string(Op) << std::endl;
+  ss <<  LHS->to_string(level+1);
+  ss << RHS->to_string(level+1);
+
+  return ss.str();
 }
 
 std::string ArgumentListASTnode::to_string(int level) const {
   std::stringstream ss;
-  ss << "(";
   for (int i = 0; i<Arg_list.size(); i++) {
     ss << Arg_list.at(i)->to_string(level);
   }
-  ss << ")";
   return ss.str();
 }
 
 std::string FunctionCallASTnode::to_string(int level) const {
-  std::string result = Name;
-  result += Args->to_string(level);
-  return result;
+  std::stringstream ss;
+  ss << indent(level) << "|-CallExpr " << std::endl;
+  ss << indent(level+1) << "|-Identifier '" << Name << "'" << std::endl;
+  ss << Args->to_string(level+1);
+  return ss.str();
 }
+
+
+
+
+std::string UnaryOperatorASTnode::to_string(int level) const {
+  std::stringstream ss;
+
+  ss << indent(level) << "|-UnaryOperator " << "'" << Prefix << "'" << std::endl;
+  ss << Element->to_string(level+1);
+
+  return ss.str();
+}
+
+std::string FloatASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-FloatLiteral '" << Val << "'" << std::endl;
+  return ss.str();
+}
+
+std::string IntASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-IntegerLiteral '" << Val << "'" << std::endl;
+  return ss.str();
+}
+
+std::string BoolASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-BooleanLiteral '" << Val << "'" << std::endl;
+  return ss.str();
+}
+
+std::string IdentASTnode::to_string(int level) const {
+  std::stringstream ss;
+  ss << indent(level) << "|-Identifier '" << Name << "'" << std::endl;
+  return ss.str();
+}
+
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
 //===----------------------------------------------------------------------===//
 
 void LogError(TOKEN tok, const std::string &Str) {
+
   std::cerr << Str << " on line:" << tok.lineNo << " and column: " << tok.columnNo << std::endl;
   std::exit(EXIT_FAILURE);
 }
@@ -311,10 +362,8 @@ static std::unique_ptr<ProgramASTnode> ParseProgram() {
   if (CurTok.type == EXTERN) { //PREDICT(program ::= extern_list decl_list) = {extern}
     auto extern_list = ParseExternList();
     if (extern_list) {
-      std::cout << "extern_list is valid" << std::endl;
       auto decl_list = ParseDeclList();
       if (decl_list) {
-        std::cout << "Decl list is valid " << std::endl;
         return std::make_unique<ProgramASTnode>(std::move(extern_list),std::move(decl_list));
       }
     }
@@ -322,8 +371,9 @@ static std::unique_ptr<ProgramASTnode> ParseProgram() {
   else if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
     // PREDICT(program ::= decl_list) = {int, void, float, bool}
     auto decl_list = ParseDeclList();
-    if (decl_list)
+    if (decl_list) {
       return std::make_unique<ProgramASTnode>(std::move(decl_list)); 
+    }
   }
   return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
 }
@@ -352,7 +402,7 @@ static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
   else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //decl_list_prime ::= decl decl_list_prime
     auto decl_list = ParseDeclList();
     if (decl_list)
-      return decl_list->getDecls();
+      return std::move(decl_list->getDecls());
   }
   
   return {}; //never actually reachign here because if decl_list evaluates to false then logerror has been called
@@ -365,10 +415,10 @@ static std::unique_ptr<BlockASTnode> ParseBlock() {
     if (local_decls) {
       auto stmt_list = ParseStmtList();
       if (stmt_list) {
-        if (CurTok.type == RBRA) { // THE ISSUE IS HERE MOTHER FUCKER
+        if (CurTok.type == RBRA) {
           getNextToken(); //eat }
           return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
-        } 
+        }
       }
     }
   }
@@ -588,11 +638,29 @@ static std::unique_ptr<ASTnode> ParseElement() {
     return std::make_unique<BoolASTnode>(bool_token, val);
   } 
   else if (CurTok.type == MINUS) {
-
-  } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
+    getNextToken(); //eat -
+    auto element = ParseElement();
+    if (element)
+      return std::make_unique<UnaryOperatorASTnode>("-",std::move(element));
+  } 
+  else if (CurTok.type == NOT) {
+    getNextToken(); //eat !
+    auto element = ParseElement();
+    if (element)
+      return std::make_unique<UnaryOperatorASTnode>("!",std::move(element));
+  } 
+  else if (CurTok.type == LPAR) { // element ::= '(' expr ')'
+    getNextToken(); // eat (
+    auto expr = ParseExpr();
+    if (expr) {
+      getNextToken(); // eat )
+      return std::move(expr);
+    }
+  }else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
   return nullptr;
 }
 
+//TODO fix unary expressions and implement ( expr )
 
 
 static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
@@ -643,6 +711,7 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
   if (lookahead1.type == ASSIGN) { //expand by expr ::= IDENT "=" expr
     if (match(IDENT)) {
       std::string ident = IdentifierStr;
+
       getNextToken(); //eat identifier
       getNextToken(); //eat =     //we know this from lookahead
       auto expr = ParseExpr();
@@ -719,16 +788,21 @@ static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
 static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
   if (match(RETURN)) {
     getNextToken(); //eat return
-    TOKEN lookahead1 = lookahead(1);
-    if (lookahead1.type == SC) { //expr term
+    if (CurTok.type == SC) { //expr term //this doesnt work
+      getNextToken(); //eat ;
+      return std::make_unique<ReturnStatementASTnode>();
+    }
+    else if (CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT
+    || CurTok.type ==LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT
+    || CurTok.type == BOOL_LIT) { //PREDICT(return_stmt ::= return expr ;)
       auto expr = ParseExpr();
       if (expr) {
         if (match(SC)) {
-          getNextToken(); //eat sc
+          getNextToken(); //eat ;
           return std::make_unique<ReturnStatementASTnode>(std::move(expr));
         }
-      }
     }
+   } else return LogErrorPtr<ReturnStatementASTnode>(CurTok, "Expected one of ; ident - ! ( int_lit float_lit bool_lit");
   }
   return nullptr;
 }
@@ -777,63 +851,72 @@ static std::unique_ptr<StatementASTnode> ParseStmt() {
   } 
   else if (CurTok.type == RETURN) {//PREDICT(stmt ::= return_stmt) = {"return"}
     auto return_stmt = ParseReturnStmt();
-    return std::make_unique<StatementASTnode>(std::move(return_stmt));
+    if (return_stmt)
+      return std::make_unique<StatementASTnode>(std::move(return_stmt));
   }
 
   return nullptr;
+}
+
+//local decls and statement list implementation is wrong fml
+
+static std::vector<std::unique_ptr<StatementASTnode>> ParseStmtListPrime() {
+  std::vector<std::unique_ptr<StatementASTnode>> stmt_list;
+  if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF || CurTok.type == WHILE ||
+  CurTok.type == RETURN || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
+  CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT) {
+    //PREDICT(stmt_list ::= stmt stmt_list) =  {"{", ";", "if", "while", "return", IDENT, "-", "not", "(", int_lit, float_lit, bool_lit }
+    auto stmt = ParseStmt();
+    if (stmt) {
+      stmt_list.push_back(std::move(stmt));
+      auto stmt_list_prime = ParseStmtListPrime();
+      for (int i = 0; i < stmt_list_prime.size(); i++) {
+        stmt_list.push_back(std::move(stmt_list_prime.at(i)));
+      }
+      return std::move(stmt_list);
+    }
+  }
+  else if (CurTok.type == RBRA) {
+    return std::move(stmt_list);
+  } else return LogErrorVector<StatementASTnode>(CurTok, "Expected one of { ; if while return ident - ! ( int_lit float_lit bool_lit");
 }
 
 
 static std::unique_ptr<StatementListASTnode> ParseStmtList() {
-  std::vector<std::unique_ptr<StatementASTnode>> stmt_list = {};
-  if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF || CurTok.type == WHILE ||
-  CurTok.type == RETURN || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT ||
-  CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT) {
-    //PREDICT(stmt_list ::= stmt stmt_list) = 
-    //{"{", ";", "if", "while", "return", IDENT, "-", "not", "(", int_lit, float_lit, bool_lit }
-    auto stmt = ParseStmt();
-    if (stmt) {
-      stmt_list.push_back(std::move(stmt));
-      auto stmt_list_prime = ParseStmtList();
-      if (!stmt_list_prime->getStmts().empty()) { 
-       /* for (int i = 0; i < stmt_list_prime->getStmts().size();i++) {
-          stmt_list.push_back(std::move(stmt_list_prime->getStmts().at(i)));
-        }*/
-      }
-      return std::make_unique<StatementListASTnode>(std::move(stmt_list));
-    }
-  }
-  else if (CurTok.type == RBRA) { //PREDICT(stmt_list ::= ε) = {'}'}
-    return std::make_unique<StatementListASTnode>(std::move(stmt_list));
-  } else return LogErrorPtr<StatementListASTnode>(CurTok,"Expected { ; if while return ident - ! ( int_lit float_lit bool_lit }");
-
-  return nullptr;
+  auto stmt_list = ParseStmtListPrime();
+  return std::make_unique<StatementListASTnode>(std::move(stmt_list));
 }
 
-static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
+
+static std::vector<std::unique_ptr<VariableDeclarationASTnode>> ParseLocalDeclsPrime() {
   std::vector<std::unique_ptr<VariableDeclarationASTnode>> local_decls;
 
-  if (CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //PREDICT(local_decls ::= local_decl local_decls) = {int, float, bool}
-    auto decl = ParseVarDecl(); 
-    if (decl) {
-      local_decls.push_back(std::move(decl));
-      auto local_decl_list = ParseLocalDecls();
-
-      if (local_decl_list->getDecls().size() > 0) { //if there are local declaration to add to vector
-        for (int i = 0; i < local_decl_list->getDecls().size(); i++) {
-          local_decls.push_back(std::move(local_decl_list->getDecls().at(i)));
-        }
-      }
-      return std::make_unique<LocalDeclarationsASTnode>(std::move(local_decls));
-    }
-  } else if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF || CurTok.type == WHILE
+  if (CurTok.type == LBRA || CurTok.type == SC || CurTok.type == IF || CurTok.type == WHILE
   || CurTok.type == RETURN || CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT
   || CurTok.type == LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT 
   || CurTok.type == BOOL_LIT || CurTok.type == RBRA) { 
-    //PREDICT(local_decls ::= ε) = {"{", ";", "if", "while", "return", IDENT, "-", "!", "(", int_lit, float_lit, bool_lit, "}" }
-    return std::make_unique<LocalDeclarationsASTnode>(std::move(local_decls));
+    //PREDICT(local_decl_prime ::= ε) = {"{", ";", "if", "while", "return", IDENT, "-", "!", "(", int_lit, float_lit, bool_lit, "}" }
+    return std::move(local_decls);
   }
-  return LogErrorPtr<LocalDeclarationsASTnode>(CurTok, "Expected either a local declaration or statement");
+  else if (CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
+    //PREDICT(local_decls ::= local_decl local_decls) = {int, float, bool}
+    auto decl = ParseVarDecl();
+    if (decl) {
+      local_decls.push_back(std::move(decl));
+      auto decl_list_prime = ParseLocalDeclsPrime();
+      for (int i = 0; i < decl_list_prime.size(); i++) {
+        local_decls.push_back(std::move(decl_list_prime.at(i)));
+      }
+      return std::move(local_decls);
+    }
+  } else return LogErrorVector<VariableDeclarationASTnode>(CurTok, "Expected one of { ; if while return identifier - ! ( int_lit float_lit bool_lit }");
+}
+
+
+static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
+  auto local_decls = ParseLocalDeclsPrime();
+  return std::make_unique<LocalDeclarationsASTnode>(std::move(local_decls));
+
 }
 
 //if fun_decl is called 
@@ -850,7 +933,7 @@ static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
           if (match(RPAR)) {
             getNextToken(); //eat )
             auto block = ParseBlock();
-            if (block)
+            if (block) 
               return std::make_unique<FunctionDeclarationASTnode>(type->getType(), ident, std::move(params), std::move(block));
           }
         }

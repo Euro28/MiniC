@@ -13,6 +13,14 @@ public:
   virtual std::string to_string(int level) const {};
 };
 
+//indenting to make AST easier to read
+std::string indent(int level) {
+  std::stringstream ss; 
+  for (int i=0; i < level; i++)
+    ss << "\t";
+  return ss.str();
+}
+
 //===----------------------------------------------------------------------===//
 // AST nodes
 //===----------------------------------------------------------------------===//
@@ -136,6 +144,8 @@ class StatementListASTnode : public ASTnode {
 public:
   StatementListASTnode(std::vector<std::unique_ptr<StatementASTnode>> stmt_list)
   : Stmt_list(std::move(stmt_list)) {}
+
+  StatementListASTnode() {}
 
   std::vector<std::unique_ptr<StatementASTnode>> getStmts() {
     return std::move(Stmt_list);
@@ -394,7 +404,9 @@ public:
 
   std::string to_string(int level) const override {
     std::stringstream ss;
-    ss << Extern_list->to_string(level) << Decl_list->to_string(level);
+    if (Extern_list) 
+      ss << Extern_list->to_string(level);
+    ss << Decl_list->to_string(level);
     return ss.str();
   }
 };
@@ -487,9 +499,7 @@ public:
   // virtual std::string to_string() const override {
   // return a sting representation of this AST node
   //};
-  std::string to_string(int level) const override {
-    return std::to_string(Val);
-  }
+  std::string to_string(int level) const override;
 };
 // FloatASTnode - class for float literals like 56.2
 class FloatASTnode : public ASTnode {
@@ -501,9 +511,7 @@ public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
 
-  std::string to_string(int level) const override {
-    return std::to_string(Val);
-  }
+  std::string to_string(int level) const override;
 };
 
 // BoolASTnode - class for boolean literals, true or false.
@@ -516,9 +524,7 @@ public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
   virtual Value *codegen() override {};
 
-  std::string to_string(int level) const override {
-    return std::to_string(Val);
-  }
+  std::string to_string(int level) const override;
 };
 
 class IdentASTnode : public ASTnode {
@@ -531,9 +537,7 @@ public:
 
   virtual Value *codegen() override {};
 
-  std::string to_string(int level) const override {
-    return Name;
-  }
+  std::string to_string(int level) const override;
 };
 
 // FunctionCallASTnode - node that represetns function calls
@@ -552,7 +556,18 @@ public:
 };
 
 class UnaryOperatorASTnode : public ASTnode {
+  std::string Prefix = "";
+  std::unique_ptr<ASTnode> Element; //can be one of ident, function call, int, float, bool lit
 
+public:
+  UnaryOperatorASTnode(const std::string &prefix, std::unique_ptr<ASTnode> element) 
+  : Prefix(prefix), Element(std::move(element)) {}
+
+  std::unique_ptr<ASTnode> getElement() {return std::move(Element);}
+  std::string getPrefix() {return Prefix;}
+  std::string to_string(int level) const override;
+
+  virtual Value *codegen() override {};
 };
 
 #endif
