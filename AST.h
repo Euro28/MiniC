@@ -495,7 +495,7 @@ class IntASTnode : public ASTnode {
 
 public:
   IntASTnode(TOKEN tok, int val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override {};
+  Value *codegen() override;
   // virtual std::string to_string() const override {
   // return a sting representation of this AST node
   //};
@@ -509,7 +509,7 @@ class FloatASTnode : public ASTnode {
 
 public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   std::string to_string(int level) const override;
 };

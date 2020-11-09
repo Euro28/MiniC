@@ -77,8 +77,6 @@ std::string ParameterASTnode::to_string(int level) const {
   return ss.str();
 }
 
-
-
 std::string DeclarationListASTnode::to_string(int level) const {
   std::stringstream ss;
   for (int i = 0; i < List_decl.size(); i++) { //function or variable declarations
@@ -237,7 +235,6 @@ std::string FunctionCallASTnode::to_string(int level) const {
 
 
 
-
 std::string UnaryOperatorASTnode::to_string(int level) const {
   std::stringstream ss;
 
@@ -274,6 +271,7 @@ std::string IdentASTnode::to_string(int level) const {
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
 //===----------------------------------------------------------------------===//
+
 
 void LogError(TOKEN tok, const std::string &Str) {
 
@@ -1130,6 +1128,23 @@ static TOKEN lookahead(int ahead) {
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
+static std::map<std::string, Value *> NamedValues;
+
+Value *LogErrorV(const char *Str) {
+  std::cerr << "IR error" << std::endl;
+  return nullptr;
+}
+
+Value *FloatASTnode::codegen() {
+  return ConstantFP::get(TheContext,APFloat(Val));
+}
+
+Value *IntASTnode::codegen() {
+  return ConstantInt::get(TheContext,APInt(1,Val));
+}
+
+
+
 
 //===----------------------------------------------------------------------===//
 // AST Printer
