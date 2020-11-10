@@ -213,7 +213,6 @@ std::string BinExpressionASTnode::to_string(int level) const {
   ss << indent(level) << "|-BinaryOperator " << type_to_string(Op) << std::endl;
   ss <<  LHS->to_string(level+1);
   ss << RHS->to_string(level+1);
-
   return ss.str();
 }
 
@@ -337,21 +336,21 @@ static std::unique_ptr<ArgumentsASTnode> ParseArgs();
 static std::unique_ptr<StatementASTnode> ParseStmt();
 
 static std::unique_ptr<TypeSpecASTnode> ParseTypeSpec() {
-  if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
-    auto result = std::make_unique<TypeSpecASTnode>(CurTok.type);
-    getNextToken(); //eat int/float/bool/void
-    return result;
-  } 
-  else return LogErrorPtr<TypeSpecASTnode>(CurTok, "expected one of int, float or bool or void");
+  if (CurTok.type != INT_TOK && CurTok.type != VOID_TOK && CurTok.type != FLOAT_TOK && CurTok.type != BOOL_TOK)
+    return LogErrorPtr<TypeSpecASTnode>(CurTok, "expected one of int, float or bool or void");
+  
+  auto result = std::make_unique<TypeSpecASTnode>(CurTok.type);
+  getNextToken(); //eat int/float/bool/void
+  return result;
 }
 
 static std::unique_ptr<VariableTypeASTnode> ParseVarType() {
-  if (CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
-    auto result = std::make_unique<VariableTypeASTnode>(CurTok.type);
-    getNextToken(); //eat int/float/bool
-    return result;
-  } 
-  else return LogErrorPtr<VariableTypeASTnode>(CurTok,"expected one of int, float or bool");
+  if (CurTok.type != INT_TOK && CurTok.type != FLOAT_TOK && CurTok.type != BOOL_TOK) 
+    return LogErrorPtr<VariableTypeASTnode>(CurTok,"expected one of int, float or bool");
+
+  auto result = std::make_unique<VariableTypeASTnode>(CurTok.type);
+  getNextToken(); //eat int/float/bool
+  return result;
 }
 
 // program ::= extern_list decl_list
@@ -359,21 +358,26 @@ static std::unique_ptr<VariableTypeASTnode> ParseVarType() {
 static std::unique_ptr<ProgramASTnode> ParseProgram() {
   if (CurTok.type == EXTERN) { //PREDICT(program ::= extern_list decl_list) = {extern}
     auto extern_list = ParseExternList();
-    if (extern_list) {
-      auto decl_list = ParseDeclList();
-      if (decl_list) {
-        return std::make_unique<ProgramASTnode>(std::move(extern_list),std::move(decl_list));
-      }
-    }
+
+    if (!extern_list)
+      return nullptr;
+    
+    auto decl_list = ParseDeclList();
+
+    if (!decl_list)
+      return nullptr;
+    
+    return std::make_unique<ProgramASTnode>(std::move(extern_list),std::move(decl_list));
   } 
   else if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
     // PREDICT(program ::= decl_list) = {int, void, float, bool}
     auto decl_list = ParseDeclList();
-    if (decl_list) {
-      return std::make_unique<ProgramASTnode>(std::move(decl_list)); 
-    }
-  }
-  return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
+
+    if (!decl_list)
+      return nullptr;
+
+    return std::make_unique<ProgramASTnode>(std::move(decl_list)); 
+  } else return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
 }
 
 // decl_list ::= decl decl_list_prime
@@ -381,16 +385,16 @@ static std::unique_ptr<DeclarationListASTnode> ParseDeclList() {
   std::vector<std::unique_ptr<DeclarationASTnode>> decl_list;
 
   auto decl = ParseDecl();
-  if (decl) {
-    decl_list.push_back(std::move(decl));
-    auto decl_list_prime = ParseDeclListPrime();
-    for (int i = 0; i < decl_list_prime.size(); i++) {
-      decl_list.push_back(std::move(decl_list_prime.at(i)));
-    }
-    return std::make_unique<DeclarationListASTnode>(std::move(decl_list));
-  }
 
-  return nullptr; //never actually reaching here because if decl is a nullptr then logerror was already called
+  if (!decl)
+    return nullptr;
+
+  decl_list.push_back(std::move(decl));
+  auto decl_list_prime = ParseDeclListPrime();
+  for (int i = 0; i < decl_list_prime.size(); i++) {
+    decl_list.push_back(std::move(decl_list_prime.at(i)));
+  }
+  return std::make_unique<DeclarationListASTnode>(std::move(decl_list));
 }
 
 static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
@@ -401,26 +405,28 @@ static std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
     auto decl_list = ParseDeclList();
     if (decl_list)
       return std::move(decl_list->getDecls());
-  }
-  
-  return {}; //never actually reachign here because if decl_list evaluates to false then logerror has been called
+  } else return LogErrorVector<DeclarationASTnode>(CurTok, "Expected one of eof, void, int float, bool");
 }
 
 static std::unique_ptr<BlockASTnode> ParseBlock() {
-  if (match(LBRA)) {
-    getNextToken(); //eat {
-    auto local_decls = ParseLocalDecls();
-    if (local_decls) {
-      auto stmt_list = ParseStmtList();
-      if (stmt_list) {
-        if (CurTok.type == RBRA) {
-          getNextToken(); //eat }
-          return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
-        }
-      }
-    }
-  }
-  return nullptr;
+  if (CurTok.type != LBRA)
+    return LogErrorPtr<BlockASTnode>(CurTok,"Expected {");
+
+  getNextToken(); //eat {
+
+  auto local_decls = ParseLocalDecls();
+  if (!local_decls)
+    return nullptr;
+
+  auto stmt_list = ParseStmtList();
+  if (!stmt_list)
+    return nullptr;
+
+  if (CurTok.type != RBRA)
+    return LogErrorPtr<BlockASTnode>(CurTok,"Expected }");
+
+  getNextToken(); //eat }
+  return std::make_unique<BlockASTnode>(std::move(local_decls), std::move(stmt_list));
 }
 
 
@@ -658,7 +664,6 @@ static std::unique_ptr<ASTnode> ParseElement() {
   return nullptr;
 }
 
-//TODO fix unary expressions and implement ( expr )
 
 
 static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
@@ -677,16 +682,17 @@ static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
 static std::unique_ptr<ArgumentListASTnode> ParseArgList() {
   std::vector<std::unique_ptr<ExpressionASTnode>> arg_list;
   auto expr = ParseExpr();
-  if (expr) {
-    arg_list.push_back(std::move(expr));
-    auto arg_list_prime = ParseArgListPrime();
-    for (int i = 0; i < arg_list_prime.size(); i++) {
-      arg_list.push_back(std::move(arg_list_prime.at(i)));
-    }
-    return std::make_unique<ArgumentListASTnode>(std::move(arg_list));
-  }
 
-  return nullptr;
+  if (!expr)
+    return nullptr;
+
+  arg_list.push_back(std::move(expr));
+  auto arg_list_prime = ParseArgListPrime();
+  for (int i = 0; i < arg_list_prime.size(); i++) {
+    arg_list.push_back(std::move(arg_list_prime.at(i)));
+  }
+  return std::make_unique<ArgumentListASTnode>(std::move(arg_list));
+
 }
 
 static std::unique_ptr<ArgumentsASTnode> ParseArgs() {
@@ -707,22 +713,26 @@ static std::unique_ptr<ExpressionASTnode> ParseExpr() {
   TOKEN lookahead1 = lookahead(1);
 
   if (lookahead1.type == ASSIGN) { //expand by expr ::= IDENT "=" expr
-    if (match(IDENT)) {
-      std::string ident = IdentifierStr;
+    if (CurTok.type != IDENT)
+      return LogErrorPtr<ExpressionASTnode>(CurTok,"Expected an identifier");
 
-      getNextToken(); //eat identifier
-      getNextToken(); //eat =     //we know this from lookahead
-      auto expr = ParseExpr();
-      if (expr) //depending on if expression is another assign or binop return that node
-        return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
-    }
+    std::string ident = IdentifierStr;
+    getNextToken(); //eat ident
+    getNextToken(); //eat =
+    auto expr = ParseExpr();
+    
+    if (!expr)
+      return nullptr;
+    
+    return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
   }
   else {
     auto rval = ParseRval();
-    if (rval)
-      return std::make_unique<ExpressionASTnode>(std::move(rval));
+    if (!rval)
+      return nullptr;
+
+    return std::make_unique<ExpressionASTnode>(std::move(rval));
   }
-  return nullptr;
 }
 
 static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
@@ -732,15 +742,16 @@ static std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() {
     //PREDICT(expr_stmt ::= expr ;) = { IDENT, "-", "!", "(", int_lit, float_lit, bool_lit}
     //however this parse function is only called if we know the current token is an element of PREDICT(expr_stmt ::= expr ;)
     auto expr = ParseExpr();
-    if (expr) {
-      if (match(SC)) {
-        getNextToken(); //eat ;
-        return std::make_unique<ExpresssionStatementASTnode>(std::move(expr));
-      }
-    }
-  }
 
-  return nullptr;
+    if (!expr)
+      return nullptr;
+
+    if (CurTok.type != SC)
+      return LogErrorPtr<ExpresssionStatementASTnode>(CurTok,"Expected ;");
+
+    getNextToken(); // eat ;
+    return std::make_unique<ExpresssionStatementASTnode>(std::move(expr));
+  }
 }
 
 static std::unique_ptr<ElseStatementASTnode> ParseElseStmt() {
@@ -757,35 +768,43 @@ static std::unique_ptr<ElseStatementASTnode> ParseElseStmt() {
   || CurTok.type == RBRA ) { //FOLLOW(if_stmt)
     return std::make_unique<ElseStatementASTnode>();
   } else return LogErrorPtr<ElseStatementASTnode>(CurTok, "Expected one of 'else','{', ';', if, while, return , identifier, '-', '!', '(', int_lit, float_lit, bool_lit, '}'");
-
-  return nullptr;
 }
 
 static std::unique_ptr<IfStatementASTnode> ParseIfStmt() {
-  if (match(IF)) {
-    getNextToken(); // eat if
-    if (match(LPAR)) {
-      getNextToken(); //eat (
-      auto expr = ParseExpr(); //eats expr
-      if (expr) {
-        if (match(RPAR)) {
-          getNextToken(); //eat )
-          auto block = ParseBlock();
-          if (block) {
-            auto else_stmt = ParseElseStmt();
-            if (else_stmt) {
-              return std::make_unique<IfStatementASTnode>(std::move(expr), std::move(block), std::move(else_stmt));
-            }
-          }
-        }
-      }
-    }
-  }
+  if (CurTok.type != IF)
+    return LogErrorPtr<IfStatementASTnode>(CurTok, "Expected if");
+
+  getNextToken(); //eat if
+  if (CurTok.type != LPAR)  
+    return LogErrorPtr<IfStatementASTnode>(CurTok, "Expected (");
+  
+  getNextToken(); // eat (
+  auto expr = ParseExpr(); //eat expr
+
+  if (!expr)
+    return nullptr;
+  
+  if (CurTok.type != RPAR)
+    return LogErrorPtr<IfStatementASTnode>(CurTok, "Expected )");
+
+  getNextToken(); //eat )
+  auto block = ParseBlock(); //eat block
+  
+  if (!block)
+    return nullptr;
+  
+  auto else_stmt = ParseElseStmt(); //eat else
+
+  if (!else_stmt)
+    return nullptr;
+
+  return std::make_unique<IfStatementASTnode>(std::move(expr), std::move(block), std::move(else_stmt));
 }
 
 static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
-  if (match(RETURN)) {
+  if (CurTok.type == RETURN) {
     getNextToken(); //eat return
+
     if (CurTok.type == SC) { //expr term //this doesnt work
       getNextToken(); //eat ;
       return std::make_unique<ReturnStatementASTnode>();
@@ -794,33 +813,43 @@ static std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
     || CurTok.type ==LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT
     || CurTok.type == BOOL_LIT) { //PREDICT(return_stmt ::= return expr ;)
       auto expr = ParseExpr();
-      if (expr) {
-        if (match(SC)) {
-          getNextToken(); //eat ;
-          return std::make_unique<ReturnStatementASTnode>(std::move(expr));
-        }
-    }
+
+      if (!expr)
+        return nullptr;
+      
+      if (CurTok.type != SC)
+        return LogErrorPtr<ReturnStatementASTnode>(CurTok,"expected ;");
+      
+      getNextToken(); //eat ;
+      return std::make_unique<ReturnStatementASTnode>(std::move(expr));
+
    } else return LogErrorPtr<ReturnStatementASTnode>(CurTok, "Expected one of ; ident - ! ( int_lit float_lit bool_lit");
   }
   return nullptr;
 }
 
 static std::unique_ptr<WhileStatementASTnode> ParseWhileStmt() {
-  if (CurTok.type == WHILE) {
-    getNextToken(); //eat while
-    if (match(LPAR)) {
-      getNextToken(); //eat (
-      auto expr = ParseExpr();
-      if (expr) {
-        if (match(RPAR)) {
-          getNextToken(); //eat )
-          auto stmt = ParseStmt();
-          if (stmt)
-            return std::make_unique<WhileStatementASTnode>(std::move(expr),std::move(stmt));
-        }
-      }
-    }
-  }
+  if (CurTok.type != WHILE)
+    return LogErrorPtr<WhileStatementASTnode>(CurTok, "Expected while");
+  
+  getNextToken(); //eat while
+  if (CurTok.type != LPAR)
+    return LogErrorPtr<WhileStatementASTnode>(CurTok, "Expected (");
+
+  getNextToken(); //eat (
+  auto expr = ParseExpr(); //eat expr
+  if (!expr)
+    return nullptr;
+  
+  if (CurTok.type != RPAR)
+    return LogErrorPtr<WhileStatementASTnode>(CurTok, "Expected )");
+  
+  getNextToken(); //eat )
+  auto stmt = ParseStmt(); //eat stmt
+  if (!stmt) 
+    return nullptr;
+
+  return std::make_unique<WhileStatementASTnode>(std::move(expr),std::move(stmt));
 }
 
 static std::unique_ptr<StatementASTnode> ParseStmt() {
@@ -920,25 +949,34 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
 //if fun_decl is called 
 static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
   auto type = ParseTypeSpec();
-  if (type) {
-    if (match(IDENT)) {
-      std::string ident = IdentifierStr;
-      getNextToken(); //eat ident
-      if (match(LPAR)) {
-        getNextToken(); //eat (
-        auto params = ParseParams(); //eat params
-        if (params) {
-          if (match(RPAR)) {
-            getNextToken(); //eat )
-            auto block = ParseBlock();
-            if (block) 
-              return std::make_unique<FunctionDeclarationASTnode>(type->getType(), ident, std::move(params), std::move(block));
-          }
-        }
-      }
-    }
-  }
-  return nullptr;
+  if (!type) //error message already displayed by ParseTypeSpec
+    return nullptr;
+  
+  if (CurTok.type != IDENT)
+    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an identifier");
+
+  std::string ident = IdentifierStr;
+  getNextToken(); //eat ident
+
+  if (CurTok.type != LPAR) 
+    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an '('");
+
+  getNextToken(); //eat (
+  auto params = ParseParams();
+
+  if (!params) //error message already caught in ParseParams()
+    return nullptr;
+  
+  if (CurTok.type != RPAR)
+    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an ')'");
+
+  getNextToken(); //eat )
+  auto block = ParseBlock();
+
+  if (!block) //error message already displayed in ParseBlock();
+    return nullptr;
+
+  return std::make_unique<FunctionDeclarationASTnode>(type->getType(), ident, std::move(params), std::move(block));
 }
 
 // decl ::= var_decl | fun_decl
@@ -959,29 +997,32 @@ static std::unique_ptr<DeclarationASTnode> ParseDecl() {
   //if lookahead 2 is not ; or ( we know its wrong but a syntax error might occur earlier
   //and we should return that error message instead
   auto type = ParseTypeSpec();
-  if (type) {
-    if (match(IDENT)) {
-      getNextToken();
-      return LogErrorPtr<DeclarationASTnode>(CurTok,"Expected one of ; or (");
-    }
-  }
+  if (!type)
+    return nullptr;
+  if (CurTok.type != IDENT)
+    LogErrorPtr<DeclarationASTnode>(CurTok,"Expected an identifier");
 
-  return nullptr;
+  getNextToken(); //eat ident
+  return LogErrorPtr<DeclarationASTnode>(CurTok,"Expected one of ; or (");
 }
 
 static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
   auto type = ParseVarType(); //eat type
-  if (type) {
-    if (match(IDENT)) {
-      std::string ident = IdentifierStr;
-      getNextToken(); //eat ident
-      if (match(SC)) {
-        getNextToken(); //eat ;
-        return std::make_unique<VariableDeclarationASTnode>(type->getType(), ident);
-      }
-    }
-  }
-  return nullptr;
+
+  if (!type)
+    return nullptr;
+
+  if (CurTok.type != IDENT)
+    LogErrorPtr<VariableDeclarationASTnode>(CurTok,"Expected identifier");
+  
+  std::string ident = IdentifierStr;
+  getNextToken(); //eat ident
+  
+  if (CurTok.type != SC)
+    LogErrorPtr<VariableDeclarationASTnode>(CurTok,"Expected ;");
+
+  getNextToken(); //eat ;
+  return std::make_unique<VariableDeclarationASTnode>(type->getType(), ident);
 }
 
 // extern_list ::= extern extern_list_prime
@@ -1013,31 +1054,38 @@ static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime() {
 }
 
 static std::unique_ptr<ExternASTnode> ParseExtern() {
-  if (match(EXTERN)) {
-    getNextToken(); //eat extern
-    auto type = ParseTypeSpec();
-    if (type) {
-      if (match(IDENT)) {
-        std::string ident = IdentifierStr;
-        getNextToken(); //eat IDENT
-        if (match(LPAR)) {
-          getNextToken(); //eat (
-          auto params = ParseParams(); // eats all characters in parameter PLEASE MAKE ERROR MESSAGES FOR PARAMS
-          if (params) { //params still returns null pointer
-            if (match(RPAR)) {
-              getNextToken(); //eat )
-              if (match(SC)) {
-                getNextToken(); //eat ;
-                return std::make_unique<ExternASTnode>(type->getType(), ident, std::move(params));
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return nullptr;
-} //return nullptr and let root parse functions display the error message
+  if (CurTok.type != EXTERN)
+    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an extern");
+  
+  getNextToken(); //eat extern
+  auto type = ParseTypeSpec(); //eat type
+  if (!type)
+    return nullptr;
+  
+  if (CurTok.type != IDENT)
+    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an identifier");
+
+  std::string ident = IdentifierStr;
+  getNextToken(); //eat ident
+  if (CurTok.type != LPAR)
+    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an (");
+  
+  getNextToken(); //eat (
+  auto params = ParseParams(); //eat params
+  if (!params)
+    return nullptr;
+
+  if (CurTok.type != RPAR)
+    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an )");
+
+  getNextToken(); // eat )
+
+  if (CurTok.type != SC)
+    return LogErrorPtr<ExternASTnode>(CurTok,"Expected ;");
+
+  getNextToken(); //eat ;
+  return std::make_unique<ExternASTnode>(type->getType(), ident, std::move(params));
+} 
 
 static std::unique_ptr<ParamsASTnode> ParseParams() {
   if (CurTok.type == VOID_TOK) { //PREDICT(params ::= "void") = {"void"}
@@ -1052,7 +1100,7 @@ static std::unique_ptr<ParamsASTnode> ParseParams() {
       auto param_list = ParseParamList();
       return std::move(param_list);
   }
-  return nullptr; //change to error
+  return LogErrorPtr<ParamsASTnode>(CurTok, "Expected on of void, int, bool, float or )");
 }
 
 static std::unique_ptr<ParamsASTnode> ParseParamList() {
@@ -1083,14 +1131,17 @@ static std::vector<std::unique_ptr<ParameterASTnode>> ParseParamListPrime() {
 
 static std::unique_ptr<ParameterASTnode> ParseParam() {
   auto type = ParseVarType(); //eats the variable type
-  if (type) {
-    if (match(IDENT)) {
-      std::string str = IdentifierStr;
-      getNextToken(); // eat ident
-      return std::make_unique<ParameterASTnode>(type->getType(), str);
-    }
-  }
-  return nullptr; //change to error log that outputs message and returns nullptr ( should be expected ident )
+
+  if (!type)  
+    return nullptr;
+  
+  if (CurTok.type != IDENT)
+    return LogErrorPtr<ParameterASTnode>(CurTok,"Expected identifier");
+  
+  std::string ident = IdentifierStr;
+  getNextToken(); //eat ident
+  return std::make_unique<ParameterASTnode>(type->getType(), ident);
+
 }
 
 
@@ -1143,6 +1194,149 @@ Value *IntASTnode::codegen() {
   return ConstantInt::get(TheContext,APInt(1,Val));
 }
 
+Value *BoolASTnode::codegen() {
+  return ConstantInt::get(TheContext,APInt(1,Val));
+}
+
+Value *IdentASTnode::codegen() {
+  Value *V = NamedValues[Name];
+  if (!V)
+    LogErrorV("Unknown variable name");
+  return V;
+}
+
+Value *BinExpressionASTnode::codegen() {
+  Value *L = LHS->codegen();
+  Value *R = RHS->codegen();
+
+  if (!L || !R)
+    return nullptr;
+  if (L->getType() != R->getType()) {
+    std::cout << "L and R have different types" << std::endl;
+  }
+
+  //if both have different types then widen
+  switch (Op)
+  {
+  case PLUS:
+    return Builder.CreateBinOp(Instruction::Add,L,R,"addtmp");
+  case ASTERIX:
+    return Builder.CreateBinOp(Instruction::Mul,L,R,"multmp");
+  case EQ:
+    return Builder.CreateFCmpUEQ(L,R, "eqtmp");
+    //bool 0/1 to floating point
+  default:
+    return LogErrorV("invalid binary operator");
+  }
+}
+
+Value *FunctionCallASTnode::codegen() {
+  Function *NameF = TheModule->getFunction(Name);
+  if (!NameF)
+    return LogErrorV("Unknown function referenced");
+ 
+  int argSize = Args->getArgList()->getArgs().size();
+  if (NameF->arg_size() != argSize)
+    return LogErrorV("Incorect # arguments passed");
+
+  std::vector<Value *> ArgsV;
+  for (int i = 0; i < argSize; i++) {
+    ArgsV.push_back(Args->getArgList()->getArgs().at(i)->codegen());
+    //need to make codegen for expressionASTnode 
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder.CreateCall(NameF,ArgsV, "calltmp");
+}
+
+Function *FunctionDeclarationASTnode::codegen() {
+  std::vector<Type*> IntArgs(Params->getParams().size(), Type::getInt32Ty(TheContext));
+
+  FunctionType *FT = 
+    FunctionType::get(Type::getInt32Ty(TheContext), IntArgs, false);
+
+  Function *F = 
+    Function::Create(FT,Function::ExternalLinkage, Identifier,TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args()) 
+    Arg.setName(Params->getParams()[Idx]->getIdent());
+
+  return F;
+}
+
+Value *IfStatementASTnode::codegen() {
+  Value *Cond = Expr->codegen();
+  if (!Cond)
+    return nullptr;
+  
+  Cond = Builder.CreateFCmpONE(Cond, ConstantFP::get(TheContext, APFloat(0.0)), "ifcond");
+
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *ThenBB =
+    BasicBlock::Create(TheContext, "then", TheFunction);
+  BasicBlock *ElseBB =
+    BasicBlock::Create(TheContext, "else");
+  BasicBlock *MergeBB = 
+    BasicBlock::Create(TheContext, "ifcont");
+  
+  Builder.CreateCondBr(Cond, ThenBB, ElseBB);
+
+  Builder.SetInsertPoint(ThenBB);
+  Value *ThenV = Block->codegen();
+  if (!ThenV)
+    return nullptr;
+
+  Builder.CreateBr(MergeBB);
+  ThenBB = Builder.GetInsertBlock();
+
+  TheFunction->getBasicBlockList().push_back(ElseBB);
+  Builder.SetInsertPoint(ElseBB);
+
+  Value *ElseV = Else->codegen();
+  if (!ElseV)
+    return nullptr;
+  
+  Builder.CreateBr(MergeBB);
+  ElseBB = Builder.GetInsertBlock();
+
+  TheFunction->getBasicBlockList().push_back(MergeBB);
+  Builder.SetInsertPoint(MergeBB);
+  PHINode *PN = Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
+
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+
+  return PN;
+}
+
+Value *WhileStatementASTnode::codegen() {
+
+  
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *HeaderBB =
+    BasicBlock::Create(TheContext, "header", TheFunction);
+  BasicBlock *BodyBB =
+    BasicBlock::Create(TheContext, "body");
+  BasicBlock *EndBB =
+    BasicBlock::Create(TheContext, "end");
+
+
+  Builder.SetInsertPoint(HeaderBB);
+
+  Value *Cond = Expr->codegen();
+  if (!Cond)
+    return nullptr;
+
+  Cond = Builder.CreateFCmpONE(Cond, ConstantFP::get(TheContext, APFloat(0.0)), "whilecond");
+
+  Builder.CreateCondBr(Cond, BodyBB, EndBB);
+
+}
+
 
 
 
@@ -1190,6 +1384,7 @@ int main(int argc, char **argv) {
   parser();
   fprintf(stderr, "Parsing Finished\n");
 
+  TheModule->print(llvm::errs(), nullptr);
   //********************* Start printing final IR **************************
   // Print out all of the generated code into a file called output.ll
   auto Filename = "output.ll";

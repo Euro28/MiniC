@@ -129,7 +129,7 @@ class WhileStatementASTnode : public ASTnode {
   std::unique_ptr<StatementASTnode> Stmt;
 
 public:
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt)
   : Expr(std::move(expr)), Stmt(std::move(stmt)) {}
@@ -191,8 +191,8 @@ class IfStatementASTnode : public ASTnode {
   std::unique_ptr<ElseStatementASTnode> Else;
 
 public:
-  virtual Value *codegen() override {};
-  
+  Value *codegen() override;
+
   IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
   std::unique_ptr<ElseStatementASTnode> else_ptr) 
   : Expr(std::move(expr)), Block(std::move(block)), Else(std::move(else_ptr)) {}
@@ -297,7 +297,7 @@ public:
     int fun_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params, std::unique_ptr<BlockASTnode> block)
   : Fun_type(fun_type), Identifier(identifier), Params(std::move(params)), Block(std::move(block)) {}
   
-  virtual Value *codegen() override {};
+  Function *codegen() override;
 
   std::unique_ptr<ParamsASTnode> getParams() {
     return std::move(Params);
@@ -447,7 +447,7 @@ public:
 
   std::string to_string(int level) const override;
   
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 };
 
 /*List(vector) of arguments which are just expressions*/
@@ -522,7 +522,7 @@ class BoolASTnode : public ASTnode {
 
 public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   std::string to_string(int level) const override;
 };
@@ -535,7 +535,7 @@ public:
   IdentASTnode(TOKEN tok, const std::string &name) 
   : Tok(tok), Name(name) {}
 
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   std::string to_string(int level) const override;
 };
@@ -546,7 +546,7 @@ class FunctionCallASTnode : public ASTnode {
   std::unique_ptr<ArgumentsASTnode> Args;
 
 public:
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   FunctionCallASTnode(const std::string &name, std::unique_ptr<ArgumentsASTnode> args)
   : Name(name), Args(std::move(args)) {}
