@@ -38,6 +38,7 @@
 #include "AST.h"
 
 
+
 using namespace llvm;
 using namespace llvm::sys;
 
@@ -1172,9 +1173,15 @@ static TOKEN lookahead(int ahead) {
   getNextToken();
   return lookahead;
 }
+
+
 //===----------------------------------------------------------------------===//
 // Code Generation
 //===----------------------------------------------------------------------===//
+
+FunctionType *getFunctionType(int,std::vector<llvm::Type*>);
+llvm::Type *typeToLLVM(int Type);
+static AllocaInst *CreateEntryBlockAlloca(Function *, const std::string &, int);
 
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
@@ -1186,157 +1193,118 @@ Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-Value *FloatASTnode::codegen() {
-  return ConstantFP::get(TheContext,APFloat(Val));
-}
+Value *ProgramASTnode::codegen() {
+  TheModule = std::make_unique<Module>("mini-c",TheContext);
+  for (auto const &ext : Extern_list->getExterns()) 
+    ext->codegen();
+    
+  for (auto const &decl : Decl_list->getDecls())
+    decl->codegen();
 
-Value *IntASTnode::codegen() {
-  return ConstantInt::get(TheContext,APInt(1,Val));
-}
+  //********************* Start printing final IR **************************
+  // Print out all of the generated code into a file called output.ll
+  auto Filename = "output.ll";
+  std::error_code EC;
+  raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
 
-Value *BoolASTnode::codegen() {
-  return ConstantInt::get(TheContext,APInt(1,Val));
-}
-
-Value *IdentASTnode::codegen() {
-  Value *V = NamedValues[Name];
-  if (!V)
-    LogErrorV("Unknown variable name");
-  return V;
-}
-
-Value *BinExpressionASTnode::codegen() {
-  Value *L = LHS->codegen();
-  Value *R = RHS->codegen();
-
-  if (!L || !R)
+  if (EC) {
+    errs() << "Could not open file: " << EC.message();
     return nullptr;
-  if (L->getType() != R->getType()) {
-    std::cout << "L and R have different types" << std::endl;
   }
+  // TheModule->print(errs(), nullptr); // print IR to terminal
+  TheModule->print(dest, nullptr);
+  TheModule->print(llvm::errs(), nullptr);
 
-  //if both have different types then widen
-  switch (Op)
-  {
-  case PLUS:
-    return Builder.CreateBinOp(Instruction::Add,L,R,"addtmp");
-  case ASTERIX:
-    return Builder.CreateBinOp(Instruction::Mul,L,R,"multmp");
-  case EQ:
-    return Builder.CreateFCmpUEQ(L,R, "eqtmp");
-    //bool 0/1 to floating point
-  default:
-    return LogErrorV("invalid binary operator");
-  }
+  return nullptr;
 }
 
-Value *FunctionCallASTnode::codegen() {
-  Function *NameF = TheModule->getFunction(Name);
-  if (!NameF)
-    return LogErrorV("Unknown function referenced");
- 
-  int argSize = Args->getArgList()->getArgs().size();
-  if (NameF->arg_size() != argSize)
-    return LogErrorV("Incorect # arguments passed");
+//generate prototype for extern
+Value *ExternASTnode::codegen() {
+  
+  std::vector<llvm::Type*> typeVector;
+  auto paramList = Params->getParams();
 
-  std::vector<Value *> ArgsV;
-  for (int i = 0; i < argSize; i++) {
-    ArgsV.push_back(Args->getArgList()->getArgs().at(i)->codegen());
-    //need to make codegen for expressionASTnode 
-    if (!ArgsV.back())
-      return nullptr;
-  }
-
-  return Builder.CreateCall(NameF,ArgsV, "calltmp");
-}
-
-Function *FunctionDeclarationASTnode::codegen() {
-  std::vector<Type*> IntArgs(Params->getParams().size(), Type::getInt32Ty(TheContext));
-
-  FunctionType *FT = 
-    FunctionType::get(Type::getInt32Ty(TheContext), IntArgs, false);
+  for (auto const &param : paramList) //for each extern param populate the vector
+    typeVector.push_back(typeToLLVM(param->getType()));
+    
+  FunctionType *FT = getFunctionType(Token_type, typeVector);
 
   Function *F = 
-    Function::Create(FT,Function::ExternalLinkage, Identifier,TheModule.get());
+    Function::Create(FT, Function::ExternalLinkage, Identifier, TheModule.get());
 
-  unsigned Idx = 0;
-  for (auto &Arg : F->args()) 
-    Arg.setName(Params->getParams()[Idx]->getIdent());
+  unsigned i = 0;
+  std::string name;
+  for (auto &Arg : F->args()) {
+    name = paramList[i++]->getIdent();
+    Arg.setName(name);
+  }
 
-  return F;
+  return nullptr;
 }
 
-Value *IfStatementASTnode::codegen() {
-  Value *Cond = Expr->codegen();
-  if (!Cond)
-    return nullptr;
-  
-  Cond = Builder.CreateFCmpONE(Cond, ConstantFP::get(TheContext, APFloat(0.0)), "ifcond");
+Value *FunctionDeclarationASTnode::codegen() {
 
-  Function *TheFunction = Builder.GetInsertBlock()->getParent();
-
-  BasicBlock *ThenBB =
-    BasicBlock::Create(TheContext, "then", TheFunction);
-  BasicBlock *ElseBB =
-    BasicBlock::Create(TheContext, "else");
-  BasicBlock *MergeBB = 
-    BasicBlock::Create(TheContext, "ifcont");
-  
-  Builder.CreateCondBr(Cond, ThenBB, ElseBB);
-
-  Builder.SetInsertPoint(ThenBB);
-  Value *ThenV = Block->codegen();
-  if (!ThenV)
-    return nullptr;
-
-  Builder.CreateBr(MergeBB);
-  ThenBB = Builder.GetInsertBlock();
-
-  TheFunction->getBasicBlockList().push_back(ElseBB);
-  Builder.SetInsertPoint(ElseBB);
-
-  Value *ElseV = Else->codegen();
-  if (!ElseV)
-    return nullptr;
-  
-  Builder.CreateBr(MergeBB);
-  ElseBB = Builder.GetInsertBlock();
-
-  TheFunction->getBasicBlockList().push_back(MergeBB);
-  Builder.SetInsertPoint(MergeBB);
-  PHINode *PN = Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
-
-  PN->addIncoming(ThenV, ThenBB);
-  PN->addIncoming(ElseV, ElseBB);
-
-  return PN;
-}
-
-Value *WhileStatementASTnode::codegen() {
-
-  
-  Function *TheFunction = Builder.GetInsertBlock()->getParent();
-
-  BasicBlock *HeaderBB =
-    BasicBlock::Create(TheContext, "header", TheFunction);
-  BasicBlock *BodyBB =
-    BasicBlock::Create(TheContext, "body");
-  BasicBlock *EndBB =
-    BasicBlock::Create(TheContext, "end");
+  return nullptr;
 
 
-  Builder.SetInsertPoint(HeaderBB);
-
-  Value *Cond = Expr->codegen();
-  if (!Cond)
-    return nullptr;
-
-  Cond = Builder.CreateFCmpONE(Cond, ConstantFP::get(TheContext, APFloat(0.0)), "whilecond");
-
-  Builder.CreateCondBr(Cond, BodyBB, EndBB);
 
 }
 
+Value *VariableDeclarationASTnode::codegen() {
+
+  
+  if (Builder.GetInsertBlock()) { //in function so its a local declaration
+    Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Identifier, Var_type);
+
+  } else {
+    //create global variable
+  }
+  //get the current function
+ 
+
+  return nullptr;
+}
+//===----------------------------------------------------------------------===//
+// Utility Functions for code gen
+//===----------------------------------------------------------------------===//
+
+FunctionType *getFunctionType(int Type, std::vector<llvm::Type*> Param) {
+  switch(Type) {
+    case VOID_TOK:
+      return FunctionType::get(Type::getVoidTy(TheContext),Param,false);
+    case FLOAT_TOK:
+      return FunctionType::get(Type::getFloatTy(TheContext), Param, false);
+    case INT_TOK:
+      return FunctionType::get(Type::getInt32Ty(TheContext),Param,false);
+    case BOOL_TOK:
+      return FunctionType::get(Type::getInt1Ty(TheContext), Param, false);
+    default:
+      return nullptr;
+  }
+}
+
+
+//given a type returns a llvm type
+llvm::Type *typeToLLVM(int Type) {
+  switch (Type)
+  {
+  case INT_TOK:
+    return llvm::Type::getInt32Ty(TheContext);
+  case BOOL_TOK:
+    return llvm::Type::getInt1Ty(TheContext);
+  case FLOAT_TOK:
+    return llvm::Type::getFloatTy(TheContext);
+  default:
+    return llvm::Type::getDoubleTy(TheContext);
+  }
+}
+
+static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, int Type) {
+  IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());  
+  return TmpB.CreateAlloca(typeToLLVM(Type),0,Varname.c_str());
+}
 
 
 

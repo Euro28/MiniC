@@ -51,7 +51,7 @@ public:
   std::string getId() { return Identifier;}
   int getType() {return Var_type;}
 
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 };
 
 class LocalDeclarationsASTnode : public ASTnode {
@@ -129,7 +129,7 @@ class WhileStatementASTnode : public ASTnode {
   std::unique_ptr<StatementASTnode> Stmt;
 
 public:
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt)
   : Expr(std::move(expr)), Stmt(std::move(stmt)) {}
@@ -191,7 +191,7 @@ class IfStatementASTnode : public ASTnode {
   std::unique_ptr<ElseStatementASTnode> Else;
 
 public:
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
   std::unique_ptr<ElseStatementASTnode> else_ptr) 
@@ -240,7 +240,7 @@ public:
   ParameterASTnode(int type, const std::string &ident) 
   : Type(type), Ident(ident) {}
 
-  std::string getType() {return type_to_string(Type);}
+  int getType() {return Type;}
 
   std::string getIdent() {return Ident;}
 
@@ -297,7 +297,7 @@ public:
     int fun_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params, std::unique_ptr<BlockASTnode> block)
   : Fun_type(fun_type), Identifier(identifier), Params(std::move(params)), Block(std::move(block)) {}
   
-  Function *codegen() override;
+  Value *codegen() override;
 
   std::unique_ptr<ParamsASTnode> getParams() {
     return std::move(Params);
@@ -364,7 +364,7 @@ public:
 
   std::string to_string(int level) const override;
 
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 };
 
 class ExternListASTnode : public ASTnode { //seg fault is caused by defining the pointers of List_Extern but
@@ -400,7 +400,7 @@ public:
 
   ProgramASTnode(std::unique_ptr<DeclarationListASTnode> decl_list) 
   : Decl_list(std::move(decl_list)) {}
-  virtual Value *codegen() override {};
+  Value *codegen() override ;
 
   std::string to_string(int level) const override {
     std::stringstream ss;
@@ -447,7 +447,7 @@ public:
 
   std::string to_string(int level) const override;
   
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 };
 
 /*List(vector) of arguments which are just expressions*/
@@ -495,7 +495,7 @@ class IntASTnode : public ASTnode {
 
 public:
   IntASTnode(TOKEN tok, int val) : Val(val), Tok(tok) {}
-  Value *codegen() override;
+  virtual Value *codegen() override {};
   // virtual std::string to_string() const override {
   // return a sting representation of this AST node
   //};
@@ -509,7 +509,7 @@ class FloatASTnode : public ASTnode {
 
 public:
   FloatASTnode(TOKEN tok, float val) : Val(val), Tok(tok) {}
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   std::string to_string(int level) const override;
 };
@@ -522,7 +522,7 @@ class BoolASTnode : public ASTnode {
 
 public:
   BoolASTnode(TOKEN tok, bool val) : Val(val), Tok(tok) {}
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   std::string to_string(int level) const override;
 };
@@ -535,7 +535,7 @@ public:
   IdentASTnode(TOKEN tok, const std::string &name) 
   : Tok(tok), Name(name) {}
 
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   std::string to_string(int level) const override;
 };
@@ -546,7 +546,7 @@ class FunctionCallASTnode : public ASTnode {
   std::unique_ptr<ArgumentsASTnode> Args;
 
 public:
-  Value *codegen() override;
+  virtual Value *codegen() override {};
 
   FunctionCallASTnode(const std::string &name, std::unique_ptr<ArgumentsASTnode> args)
   : Name(name), Args(std::move(args)) {}
