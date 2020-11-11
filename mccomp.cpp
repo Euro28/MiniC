@@ -57,9 +57,9 @@ std::string ExternListASTnode::to_string(int level) const {
   return ss.str();
 }
 
-std::string ExternASTnode::to_string(int level) const {
+std::string FuncProto::to_string(int level) const {
   std::stringstream ss;
-  ss << " " << Identifier << " '" << type_to_string(Token_type) << " (" << Params->list_types() << ")' extern" << std::endl;
+  ss << " " << Identifier << " '" << type_to_string(Token_type) << " (" << Params->list_types() << ")' extern " << std::endl;
   ss << Params->to_string(level);
   return ss.str();
 }
@@ -105,8 +105,8 @@ std::string VariableDeclarationASTnode::to_string(int level) const {
 
 std::string FunctionDeclarationASTnode::to_string(int level) const {
   std::stringstream ss;
-  ss << indent(level) << "|-FunctionDecl" << Identifier << " '" << type_to_string(Fun_type) << " ("  << Params->list_types() << ")'" << std::endl;
-  ss << Params->to_string(level+1);
+  ss << indent(level) << "|-FunctionDecl " << Proto->getIdent() << " '" << type_to_string(Proto->getType()) << " ("  << Proto->paramString() << ")'" << std::endl;
+  ss << Proto->ParamASTstring(level+1);
   if (Block)
     ss << Block->to_string(level+1);
   return ss.str();
@@ -306,9 +306,9 @@ static bool match(int match) {
 
 /* Add function calls for each production */
 static std::unique_ptr<ExternListASTnode> ParseExternList();
-static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime();
+static std::vector<std::unique_ptr<FuncProto>> ParseExternListPrime();
 static std::unique_ptr<ParamsASTnode> ParseParams();
-static std::unique_ptr<ExternASTnode> ParseExtern();
+static std::unique_ptr<FuncProto> ParseProto();
 static std::unique_ptr<ParameterASTnode> ParseParam();
 static std::vector<std::unique_ptr<ParameterASTnode>> ParseParamListPrime();
 static std::unique_ptr<ParamsASTnode> ParseParamList();
@@ -382,7 +382,7 @@ static std::unique_ptr<ProgramASTnode> ParseProgram() {
 }
 
 // decl_list ::= decl decl_list_prime
-static std::unique_ptr<DeclarationListASTnode> ParseDeclList() {
+static std::unique_ptr<DeclarationListASTnode> ParseDeclList() { //change format so you are adding single to returned prime list 
   std::vector<std::unique_ptr<DeclarationASTnode>> decl_list;
 
   auto decl = ParseDecl();
@@ -642,17 +642,12 @@ static std::unique_ptr<ASTnode> ParseElement() {
     getNextToken(); //eat bool_lit
     return std::make_unique<BoolASTnode>(bool_token, val);
   } 
-  else if (CurTok.type == MINUS) {
-    getNextToken(); //eat -
+  else if (CurTok.type == MINUS || CurTok.type == NOT) {
+    int Op = CurTok.type;
+    getNextToken(); //eat -/!
     auto element = ParseElement();
     if (element)
-      return std::make_unique<UnaryOperatorASTnode>("-",std::move(element));
-  } 
-  else if (CurTok.type == NOT) {
-    getNextToken(); //eat !
-    auto element = ParseElement();
-    if (element)
-      return std::make_unique<UnaryOperatorASTnode>("!",std::move(element));
+      return std::make_unique<UnaryOperatorASTnode>(type_to_string(Op),std::move(element));
   } 
   else if (CurTok.type == LPAR) { // element ::= '(' expr ')'
     getNextToken(); // eat (
@@ -664,7 +659,6 @@ static std::unique_ptr<ASTnode> ParseElement() {
   }else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
   return nullptr;
 }
-
 
 
 static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
@@ -680,7 +674,7 @@ static std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime() {
   } else return LogErrorVector<ExpressionASTnode>(CurTok, "Expectecd one of ',' or ')'");
 }
 
-static std::unique_ptr<ArgumentListASTnode> ParseArgList() {
+static std::unique_ptr<ArgumentListASTnode> ParseArgList() { //make it so youre returning prime vector
   std::vector<std::unique_ptr<ExpressionASTnode>> arg_list;
   auto expr = ParseExpr();
 
@@ -947,37 +941,20 @@ static std::unique_ptr<LocalDeclarationsASTnode> ParseLocalDecls() {
 
 }
 
+
 //if fun_decl is called 
 static std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
-  auto type = ParseTypeSpec();
-  if (!type) //error message already displayed by ParseTypeSpec
+  auto proto = ParseProto();
+
+  if (!proto)
     return nullptr;
-  
-  if (CurTok.type != IDENT)
-    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an identifier");
 
-  std::string ident = IdentifierStr;
-  getNextToken(); //eat ident
-
-  if (CurTok.type != LPAR) 
-    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an '('");
-
-  getNextToken(); //eat (
-  auto params = ParseParams();
-
-  if (!params) //error message already caught in ParseParams()
-    return nullptr;
-  
-  if (CurTok.type != RPAR)
-    return LogErrorPtr<FunctionDeclarationASTnode>(CurTok,"Expected an ')'");
-
-  getNextToken(); //eat )
   auto block = ParseBlock();
 
   if (!block) //error message already displayed in ParseBlock();
     return nullptr;
 
-  return std::make_unique<FunctionDeclarationASTnode>(type->getType(), ident, std::move(params), std::move(block));
+  return std::make_unique<FunctionDeclarationASTnode>(std::move(proto), std::move(block));
 }
 
 // decl ::= var_decl | fun_decl
@@ -1028,9 +1005,17 @@ static std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
 
 // extern_list ::= extern extern_list_prime
 static std::unique_ptr<ExternListASTnode> ParseExternList() {
-  std::vector<std::unique_ptr<ExternASTnode>> extern_list;
+  std::vector<std::unique_ptr<FuncProto>> extern_list;
 
-  auto extern_ = ParseExtern();
+  getNextToken(); //eat extern (we know its extern as we only execute ParseExternList() if Curtok.type == Extern)
+
+  auto extern_ = ParseProto();
+
+  if (CurTok.type != SC)
+    return LogErrorPtr<ExternListASTnode>(CurTok,"Expected ;");
+
+  getNextToken(); //eat ;
+
   if (extern_) {
     extern_list.push_back(std::move(extern_));
     auto extern_list_prime = ParseExternListPrime();
@@ -1042,7 +1027,7 @@ static std::unique_ptr<ExternListASTnode> ParseExternList() {
   return nullptr; //change to error message
 }
 
-static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime() {
+static std::vector<std::unique_ptr<FuncProto>> ParseExternListPrime() {
   
   if (CurTok.type == EXTERN) {
     auto extern_list = ParseExternList();
@@ -1051,25 +1036,21 @@ static std::vector<std::unique_ptr<ExternASTnode>> ParseExternListPrime() {
   } else if (CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK || CurTok.type == INT_TOK || CurTok.type == VOID_TOK) {
     return {};
   }
-  return LogErrorVector<ExternASTnode>(CurTok, "Expected one of extern, float, int, void, bool"); 
+  return LogErrorVector<FuncProto>(CurTok, "Expected one of extern, float, int, void, bool"); 
 }
 
-static std::unique_ptr<ExternASTnode> ParseExtern() {
-  if (CurTok.type != EXTERN)
-    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an extern");
-  
-  getNextToken(); //eat extern
+static std::unique_ptr<FuncProto> ParseProto() {
   auto type = ParseTypeSpec(); //eat type
   if (!type)
     return nullptr;
   
   if (CurTok.type != IDENT)
-    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an identifier");
+    return LogErrorPtr<FuncProto>(CurTok,"Expected an identifier");
 
   std::string ident = IdentifierStr;
   getNextToken(); //eat ident
   if (CurTok.type != LPAR)
-    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an (");
+    return LogErrorPtr<FuncProto>(CurTok,"Expected an (");
   
   getNextToken(); //eat (
   auto params = ParseParams(); //eat params
@@ -1077,15 +1058,11 @@ static std::unique_ptr<ExternASTnode> ParseExtern() {
     return nullptr;
 
   if (CurTok.type != RPAR)
-    return LogErrorPtr<ExternASTnode>(CurTok,"Expected an )");
+    return LogErrorPtr<FuncProto>(CurTok,"Expected an )");
 
   getNextToken(); // eat )
 
-  if (CurTok.type != SC)
-    return LogErrorPtr<ExternASTnode>(CurTok,"Expected ;");
-
-  getNextToken(); //eat ;
-  return std::make_unique<ExternASTnode>(type->getType(), ident, std::move(params));
+  return std::make_unique<FuncProto>(type->getType(), ident, std::move(params));
 } 
 
 static std::unique_ptr<ParamsASTnode> ParseParams() {
@@ -1147,11 +1124,10 @@ static std::unique_ptr<ParameterASTnode> ParseParam() {
 
 
 // program ::= extern_list decl_list
-static void parser() {
-  // add body
+static std::unique_ptr<ProgramASTnode> parser() {
   getNextToken();
   auto program = ParseProgram();
-  std::cout << program->to_string(0) << std::endl;
+  return std::move(program);
 }
 
 /*Supply an look ahead value and returns the token at that lookahead*/
@@ -1188,7 +1164,7 @@ static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, Value *> NamedValues;
 
-Value *LogErrorV(const char *Str) {
+Value *LogErrorV(std::string const &Str) {
   std::cerr << "IR error" << std::endl;
   return nullptr;
 }
@@ -1198,28 +1174,24 @@ Value *ProgramASTnode::codegen() {
   for (auto const &ext : Extern_list->getExterns()) 
     ext->codegen();
     
-  for (auto const &decl : Decl_list->getDecls())
+  for (auto const &decl : Decl_list->getDecls()) {
     decl->codegen();
-
-  //********************* Start printing final IR **************************
-  // Print out all of the generated code into a file called output.ll
-  auto Filename = "output.ll";
-  std::error_code EC;
-  raw_fd_ostream dest(Filename, EC, sys::fs::F_None);
-
-  if (EC) {
-    errs() << "Could not open file: " << EC.message();
-    return nullptr;
   }
-  // TheModule->print(errs(), nullptr); // print IR to terminal
-  TheModule->print(dest, nullptr);
-  TheModule->print(llvm::errs(), nullptr);
+    
+
+
+  return nullptr;
+}
+
+Value *DeclarationASTnode::codegen() {
+  if (Fun_decl)
+    Fun_decl->codegen();
 
   return nullptr;
 }
 
 //generate prototype for extern
-Value *ExternASTnode::codegen() {
+Function *FuncProto::codegen() {
   
   std::vector<llvm::Type*> typeVector;
   auto paramList = Params->getParams();
@@ -1228,7 +1200,7 @@ Value *ExternASTnode::codegen() {
     typeVector.push_back(typeToLLVM(param->getType()));
     
   FunctionType *FT = getFunctionType(Token_type, typeVector);
-
+  
   Function *F = 
     Function::Create(FT, Function::ExternalLinkage, Identifier, TheModule.get());
 
@@ -1239,10 +1211,39 @@ Value *ExternASTnode::codegen() {
     Arg.setName(name);
   }
 
-  return nullptr;
+  return F;
 }
 
 Value *FunctionDeclarationASTnode::codegen() {
+  Function *TheFunction = TheModule->getFunction(Proto->getIdent());
+
+  if (!TheFunction) {
+    TheFunction = Proto->codegen();
+  }
+
+  if (!TheFunction) 
+    return nullptr;
+  
+  if (!TheFunction->empty())
+    return (Function*)LogErrorV("Function" + Proto->getIdent() + "cannot be redefined"); //change this
+
+  //create a new basic block to start insertion into
+  BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
+  Builder.SetInsertPoint(BB);
+
+  //record the function arguments in the NamedValues map.
+  NamedValues.clear();
+  
+  
+  unsigned i = 0;
+  for (auto &Arg : TheFunction->args()) {  
+    NamedValues[std::string(Arg.getName())] = &Arg;
+  }
+  
+  
+  fprintf(stderr, "Big time\n");
+  
+
 
   return nullptr;
 
@@ -1336,20 +1337,14 @@ int main(int argc, char **argv) {
   lineNo = 1;
   columnNo = 1;
 
-  // get the first token
-  /*getNextToken();
-  while (CurTok.type != EOF_TOK) {
-    fprintf(stderr, "Token: %s with type %d\n", CurTok.lexeme.c_str(),
-            CurTok.type);
-    getNextToken();
-  } */
   fprintf(stderr, "Lexer Finished\n");
 
   // Make the module, which holds all the code.
   TheModule = std::make_unique<Module>("mini-c", TheContext);
 
   // Run the parser now.
-  parser();
+  auto program = parser();
+  std::cout << program->to_string(0) << std::endl;
   fprintf(stderr, "Parsing Finished\n");
 
   TheModule->print(llvm::errs(), nullptr);

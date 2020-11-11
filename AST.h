@@ -48,6 +48,7 @@ public:
   : Var_type(var_type), Identifier(identifier) {}
 
   std::string to_string(int level) const override;
+
   std::string getId() { return Identifier;}
   int getType() {return Var_type;}
 
@@ -275,7 +276,7 @@ public:
   std::string list_types() const {
     std::string result;
     for (int i=0; i < Params.size(); i++) {
-      result += Params.at(i)->getType();
+      result += type_to_string(Params.at(i)->getType());
       if (i != Params.size()-1)
         result += ",";
     }
@@ -285,23 +286,49 @@ public:
   virtual Value *codegen() override {};
 };
 
-class FunctionDeclarationASTnode : public ASTnode {
-  int Fun_type;
+class FuncProto: public ASTnode {
+  int Token_type;
   std::string Identifier;
   std::unique_ptr<ParamsASTnode> Params;
+
+public:
+  FuncProto(int token_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params)
+  : Token_type(token_type), Identifier(identifier), Params(std::move(params)) {}
+
+  std::string getIdent() {return Identifier;}
+  int getType() {return Token_type;}
+
+  std::unique_ptr<ParamsASTnode> getParam() {
+    return std::move(Params);
+  }
+  std::string paramString() {
+    return Params->list_types();
+  }
+
+  std::string ParamASTstring(int level) {
+    return Params->to_string(level);
+  }
+
+  std::string to_string(int level) const override;
+
+  Function *codegen() override;
+};
+
+class FunctionDeclarationASTnode : public ASTnode {
   std::unique_ptr<BlockASTnode> Block;
+  std::unique_ptr<FuncProto> Proto;
 
 public:
 
-  FunctionDeclarationASTnode(
-    int fun_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params, std::unique_ptr<BlockASTnode> block)
-  : Fun_type(fun_type), Identifier(identifier), Params(std::move(params)), Block(std::move(block)) {}
+  FunctionDeclarationASTnode(std::unique_ptr<FuncProto> proto, std::unique_ptr<BlockASTnode> block)
+  : Proto(std::move(proto)), Block(std::move(block)) {}
   
   Value *codegen() override;
 
-  std::unique_ptr<ParamsASTnode> getParams() {
-    return std::move(Params);
+  std::string ParamASTline(int level) {
+    return Proto->ParamASTstring(level);
   }
+
 
   std::string to_string(int level) const override;
 };
@@ -311,7 +338,7 @@ class DeclarationASTnode : public ASTnode {
   std::unique_ptr<FunctionDeclarationASTnode> Fun_decl;
 
 public:
-  virtual Value *codegen() override {};
+  Value *codegen() override;
 
   DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl) 
   : Var_decl(std::move(var_decl)) {}
@@ -349,35 +376,18 @@ public:
   DeclarationListASTnode() {}
 };
 
-class ExternASTnode: public ASTnode {
-  int Token_type;
-  std::string Identifier;
-  std::unique_ptr<ParamsASTnode> Params;
-
-public:
-  ExternASTnode(int token_type, const std::string &identifier, std::unique_ptr<ParamsASTnode> params)
-  : Token_type(token_type), Identifier(identifier), Params(std::move(params)) {}
-
-  std::string getIdent() {
-    return Identifier;
-  }
-
-  std::string to_string(int level) const override;
-
-  Value *codegen() override;
-};
 
 class ExternListASTnode : public ASTnode { //seg fault is caused by defining the pointers of List_Extern but
 //not instantiating it in the constructor
-  std::vector<std::unique_ptr<ExternASTnode>> List_Extern;
+  std::vector<std::unique_ptr<FuncProto>> List_Extern;
 
 public:
-  ExternListASTnode(std::vector<std::unique_ptr<ExternASTnode>> list_extern)
+  ExternListASTnode(std::vector<std::unique_ptr<FuncProto>> list_extern)
   : List_Extern(std::move(list_extern)) {}
 
   ExternListASTnode() {}
 
-  std::vector<std::unique_ptr<ExternASTnode>> getExterns() {
+  std::vector<std::unique_ptr<FuncProto>> getExterns() {
     return std::move(List_Extern);
   };
 
@@ -391,15 +401,14 @@ public:
 //A program is just a list of extern declarations and then 
 //list of normal declartions or just a list of declarations
 class ProgramASTnode : public ASTnode {
-  std::unique_ptr<ExternListASTnode> Extern_list;
-  std::unique_ptr<DeclarationListASTnode> Decl_list;
+  std::vector<std::unique_ptr<FuncProto>> Extern_list; //list of externs
+  std::vector<std::unique_ptr<DeclarationASTnode>> Decl_list;
+  
 
 public: 
-  ProgramASTnode(std::unique_ptr<ExternListASTnode> extern_list, std::unique_ptr<DeclarationListASTnode> decl_list)
-  : Extern_list(std::move(extern_list)), Decl_list(std::move(decl_list)) {} //have to move because the list classes have smart pointers as their members
+  ProgramASTnode(std::unique_ptr<ExternListASTnode> extern_list, std::unique_ptr<DeclarationListASTnode> decl_list);
+ //have to move because the list classes have smart pointers as their members
 
-  ProgramASTnode(std::unique_ptr<DeclarationListASTnode> decl_list) 
-  : Decl_list(std::move(decl_list)) {}
   Value *codegen() override ;
 
   std::string to_string(int level) const override {
