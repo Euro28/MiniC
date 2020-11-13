@@ -5,6 +5,7 @@
 #include <sstream>
 using namespace llvm;
 
+
 /// ASTnode - Base class for all AST nodes.
 class ASTnode {
 public:
@@ -17,20 +18,13 @@ public:
 //===----------------------------------------------------------------------===//
 // AST nodes
 //===----------------------------------------------------------------------===//
-
-class ParamsASTnode;
-class BlockASTnode;
-class VariableDeclarationASTnode;
-class StatementASTnode;
-class IfStatementASTnode;
-class ExpresssionStatementASTnode;
-class ReturnStatementASTnode;
-class WhileStatementASTnode;
-class ExpressionASTnode;
-class ArgumentListASTnode;
-class StatementListASTnode;
 class FuncProto;
 class DeclarationASTnode;
+class BlockASTnode;
+class ExpressionASTnode;
+class StatementASTnode;
+
+
 //A program is just a list of extern declarations and then 
 //list of normal declartions or just a list of declarations
 class ProgramASTnode : public ASTnode {
@@ -40,7 +34,7 @@ class ProgramASTnode : public ASTnode {
 
 public: 
   ProgramASTnode(std::vector<std::unique_ptr<FuncProto>> extern_list, std::vector<std::unique_ptr<DeclarationASTnode>> decl_list);
-  virtual Value *codegen() override {};
+  Value *codegen() override;
   std::string to_string(int level) const override;
 };
 
@@ -65,8 +59,9 @@ class FuncProto: public ASTnode {
 public:
   FuncProto(int type, std::string const &identifier, std::vector<std::unique_ptr<ParameterASTnode>> params);
   std::string to_string(int level) const override;
-  virtual Value *codegen() override {};
+  Value *codegen() override {};
   std::string getName();
+  int getType();
 };
 
 class FunctionDeclarationASTnode : public ASTnode {
@@ -137,7 +132,7 @@ class IntASTnode : public ASTnode {
 
 public:
   IntASTnode(TOKEN tok, int val);
-  virtual Value *codegen() override {};
+  Value *codegen() override;
   std::string to_string(int level) const override;
 };
 // FloatASTnode - class for float literals like 56.2
@@ -148,7 +143,7 @@ class FloatASTnode : public ASTnode {
 
 public:
   FloatASTnode(TOKEN tok, float val);
-  virtual Value *codegen() override {};
+  Value *codegen() override;
   std::string to_string(int level) const override;
 };
 
@@ -160,7 +155,7 @@ class BoolASTnode : public ASTnode {
 
 public:
   BoolASTnode(TOKEN tok, bool val);
-  virtual Value *codegen() override {};
+  Value *codegen() override;
   std::string to_string(int level) const override;
 };
 
@@ -184,28 +179,6 @@ public:
   virtual Value *codegen() override {};
 };
 
-class IfStatementASTnode : public ASTnode {
-  std::unique_ptr<ExpressionASTnode> Expr;
-  std::unique_ptr<BlockASTnode> Block;
-  std::unique_ptr<BlockASTnode> Else;
-
-public:
-  virtual Value *codegen() override {};
-  IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
-  std::unique_ptr<BlockASTnode> else_stmt);
-  std::string to_string(int level) const override;
-};
-
-class WhileStatementASTnode : public ASTnode {
-  std::unique_ptr<ExpressionASTnode> Expr;
-  std::unique_ptr<StatementASTnode> Stmt;
-
-public:
-  virtual Value *codegen() override {};
-  WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt);
-  std::string to_string(int level) const override;
-};
-
 class BlockASTnode : public ASTnode {
   std::vector<std::unique_ptr<VariableDeclarationASTnode>> LocalDecls;
   std::vector<std::unique_ptr<StatementASTnode>> Stmt_list;
@@ -218,98 +191,75 @@ public:
 
 };
 
+
+class WhileStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  std::unique_ptr<StatementASTnode> Stmt;
+
+public:
+  virtual Value *codegen() override {};
+  WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> expr,std::unique_ptr<StatementASTnode> stmt);
+  std::string to_string(int level) const override;
+};
+
+class IfStatementASTnode : public ASTnode {
+  std::unique_ptr<ExpressionASTnode> Expr;
+  std::unique_ptr<BlockASTnode> Block;
+  std::unique_ptr<BlockASTnode> Else;
+
+public:
+  virtual Value *codegen() override {};
+  IfStatementASTnode(std::unique_ptr<ExpressionASTnode> expr, std::unique_ptr<BlockASTnode> block, 
+  std::unique_ptr<BlockASTnode> else_stmt);
+  std::string to_string(int level) const override;
+};
+
 class ReturnStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
 
 public:
   virtual Value *codegen() override {};
   ReturnStatementASTnode(std::unique_ptr<ExpressionASTnode> expr);
+  ReturnStatementASTnode() {} //inline constructor
   std::string to_string(int level) const override;
 };
 
 
 
 
-class ExpresssionStatementASTnode : public ASTnode {
+
+//inline constructors and function definitions
+class ExpressionStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
   bool Colon;
 
 public: 
-  ExpresssionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr) 
+  ExpressionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr) 
   : Expr(std::move(expr)), Colon(false) {}
 
-  ExpresssionStatementASTnode(bool colon) : Colon(colon) {}
+  ExpressionStatementASTnode(bool colon) : Colon(colon) {}
 
-  std::string to_string(int level) const override {
-    if (!Colon)
-      return Expr->to_string(level);
-    else return ";";
-  }
+  std::string to_string(int level) const override;
 
   virtual Value *codegen() override {};
 };
-
-
 class StatementASTnode : public ASTnode {
   //this is either an expr_stmt, if, while, block, or return stmt
   std::unique_ptr<IfStatementASTnode> If_stmt;
   std::unique_ptr<BlockASTnode> Block;
-  std::unique_ptr<ExpresssionStatementASTnode> Expr_stmt;
+  std::unique_ptr<ExpressionStatementASTnode> Expr_stmt;
   std::unique_ptr<WhileStatementASTnode> While_stmt;
   std::unique_ptr<ReturnStatementASTnode> Return_stmt;
 
 public:
   StatementASTnode(std::unique_ptr<ReturnStatementASTnode> return_stmt);
-  StatementASTnode(std::unique_ptr<ExpresssionStatementASTnode> expr_stmt);
+  StatementASTnode(std::unique_ptr<ExpressionStatementASTnode> expr_stmt);
   StatementASTnode(std::unique_ptr<IfStatementASTnode> if_stmt);
   StatementASTnode(std::unique_ptr<BlockASTnode> block);
   StatementASTnode(std::unique_ptr<WhileStatementASTnode> while_stmt);
   std::string to_string(int level) const override;
   virtual Value *codegen() override {};
 };
-
-
-
-
-//Class that is associated with function/extern definition
-//that tells how many arguments and if the argument is void
-class ParamsASTnode : public ASTnode {
-  std::vector<std::unique_ptr<ParameterASTnode>> Params;
-  bool isVoid;
-
-public:
-  ParamsASTnode(std::vector<std::unique_ptr<ParameterASTnode>> params) 
-  : Params(std::move(params)), isVoid(false) {} 
-
-  ParamsASTnode(bool is_void) : isVoid(is_void) {}
-
-  ParamsASTnode() {}
-
-  bool getIsVoid() {
-    return isVoid;
-  };
-
-  std::vector<std::unique_ptr<ParameterASTnode>> getParams() {
-    return std::move(Params);
-  }
-
-  std::string to_string(int level) const override;
-
-  std::string list_types() const {
-    std::string result;
-    for (int i=0; i < Params.size(); i++) {
-      result += type_to_string(Params.at(i)->getType());
-      if (i != Params.size()-1)
-        result += ",";
-    }
-    return result;
-  }
-
-  virtual Value *codegen() override {};
-};
-
-
-
 class DeclarationASTnode : public ASTnode {
   std::unique_ptr<VariableDeclarationASTnode> Var_decl;
   std::unique_ptr<FunctionDeclarationASTnode> Fun_decl;
@@ -332,72 +282,6 @@ public:
   }
 
   std::string to_string(int level) const override;
-};
-
-class DeclarationListASTnode : public ASTnode {
-  //will contain a vector of declarations
-  std::vector<std::unique_ptr<DeclarationASTnode>> List_decl;
-
-public:
-  virtual Value *codegen() override {};
-
-  DeclarationListASTnode(std::vector<std::unique_ptr<DeclarationASTnode>> list_decl)
-  : List_decl(std::move(list_decl)) {}
-
-  std::vector<std::unique_ptr<DeclarationASTnode>> getDecls() {
-    return std::move(List_decl);
-  }
-
-  std::string to_string(int level) const override;
-
-  DeclarationListASTnode() {}
-};
-
-
-class ExternListASTnode : public ASTnode { //seg fault is caused by defining the pointers of List_Extern but
-//not instantiating it in the constructor
-  std::vector<std::unique_ptr<FuncProto>> List_Extern;
-
-public:
-  ExternListASTnode(std::vector<std::unique_ptr<FuncProto>> list_extern)
-  : List_Extern(std::move(list_extern)) {}
-
-  ExternListASTnode() {}
-
-  std::vector<std::unique_ptr<FuncProto>> getExterns() {
-    return std::move(List_Extern);
-  };
-
-  virtual Value *codegen() override {};
-
-  std::string to_string(int level) const override;
-
-  //will contain a vector of externs
-};
-
-
-class TypeSpecASTnode : public ASTnode {
-  int Type;
-
-public:
-  TypeSpecASTnode(int type) : Type(type) {}
-  virtual Value *codegen() override {};
-
-  int getType() {
-    return Type;
-  }
-};
-
-class VariableTypeASTnode : public ASTnode {
-  int Type;
-
-public:
-  VariableTypeASTnode(int type) : Type(type) {}
-  virtual Value *codegen() override {};
-
-  int getType() {
-    return Type;
-  }
 };
 
 

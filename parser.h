@@ -70,7 +70,7 @@ std::vector<std::unique_ptr<StatementASTnode>> ParseStmtList();
 std::vector<std::unique_ptr<StatementASTnode>> ParseStmtListPrime();
 std::unique_ptr<StatementASTnode> ParseStmt();
 std::unique_ptr<ExpressionASTnode> ParseExpr() ;
-std::unique_ptr<ExpresssionStatementASTnode> ParseExprStmt() ;
+std::unique_ptr<ExpressionStatementASTnode> ParseExprStmt() ;
 std::unique_ptr<IfStatementASTnode> ParseIfStmt();
 std::unique_ptr<BlockASTnode> ParseElseStmt();
 std::unique_ptr<WhileStatementASTnode> ParseWhileStmt();
@@ -94,5 +94,6 @@ std::vector<std::unique_ptr<ExpressionASTnode>> ParseArgListPrime();
 
 TOKEN lookahead(int ahead);
 std::unique_ptr<ProgramASTnode> parser();
+std::string indent(int level);
 
 #endif
