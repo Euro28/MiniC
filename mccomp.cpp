@@ -60,7 +60,9 @@ WhileStatementASTnode::WhileStatementASTnode(std::unique_ptr<ExpressionASTnode> 
   : Expr(std::move(expr)), Stmt(std::move(stmt)) {}
 
 BlockASTnode::BlockASTnode(std::vector<std::unique_ptr<VariableDeclarationASTnode>> local_decls, std::vector<std::unique_ptr<StatementASTnode>> stmt_list)
-  : LocalDecls(std::move(local_decls)), Stmt_list(std::move(stmt_list)) {}
+  : LocalDecls(std::move(local_decls)), Stmt_list(std::move(stmt_list)), Else(true) {}
+BlockASTnode::BlockASTnode() : Else(false) {}
+bool BlockASTnode::hasElse() {return Else;}
 
 ReturnStatementASTnode::ReturnStatementASTnode(std::unique_ptr<ExpressionASTnode> expr)
   : Expr(std::move(expr)) {}
@@ -184,11 +186,13 @@ std::string ReturnStatementASTnode::to_string(int level) const {
 std::string IfStatementASTnode::to_string(int level) const {
   std::stringstream ss;
   ss << indent(level) << "|-IfStmt ";
-  if (Else)
-    ss << "has_else" << std::endl;
+  if (Else->hasElse())
+    ss << "has_else";
   
-  ss << Expr->to_string(level+1) << Block->to_string(level);
-  ss << indent(level) << "|ElseStmt "<<  std::endl << Else->to_string(level);
+  ss << std::endl << Expr->to_string(level+1) << Block->to_string(level);
+
+  if (Else->hasElse())
+    ss << indent(level+1) << "|ElseStmt "<<  std::endl << Else->to_string(level+1);
   return ss.str();
 }
 
@@ -751,8 +755,8 @@ std::unique_ptr<BlockASTnode> ParseElseStmt() {
   || CurTok.type == MINUS || CurTok.type == NOT || CurTok.type == LPAR
   || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT || CurTok.type == BOOL_LIT
   || CurTok.type == RBRA ) { //FOLLOW(if_stmt)
-    std::unique_ptr<BlockASTnode> else_block;
-    return std::move(else_block);
+    
+    return std::make_unique<BlockASTnode>();
   } else return LogErrorPtr<BlockASTnode>(CurTok, "Expected one of 'else','{', ';', if, while, return , identifier, '-', '!', '(', int_lit, float_lit, bool_lit, '}'");
 }
 
@@ -788,7 +792,7 @@ std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
 
     if (CurTok.type == SC) { //expr term //this doesnt work
       getNextToken(); //eat ;
-      return std::make_unique<ReturnStatementASTnode>();
+      return std::make_unique<ReturnStatementASTnode>(nullptr);
     }
     else if (CurTok.type == IDENT || CurTok.type == MINUS || CurTok.type == NOT
     || CurTok.type ==LPAR || CurTok.type == INT_LIT || CurTok.type == FLOAT_LIT
@@ -1063,7 +1067,6 @@ std::unique_ptr<ASTnode> ParseElement() {
       return std::move(expr);
     }
   }else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
-  std::cerr << "returning nullptr in parserElement() " << std::endl;
   return nullptr;
 }
 
@@ -1148,52 +1151,35 @@ std::string indent(int level) {
 //===----------------------------------------------------------------------===//
 // Code Generation
 //===----------------------------------------------------------------------===//
+Value *LogErrorV(std::string Str);
+FunctionType *getFunctionType(int Type, std::vector<llvm::Type*> Param);
+llvm::Type *typeToLLVM(int Type);
+Type *max(Value *L, Value *R);
+Value *widen(Value *V, Type *T, Type *Widen);
+static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type);
+
 static LLVMContext TheContext;
 std::unique_ptr<Module> TheModule;
 static IRBuilder<> Builder(TheContext);
 
-Value *ProgramASTnode::codegen() {
+static std::map<std::string, AllocaInst *> NamedValues;
+static std::map<std::string, GlobalValue *> GlobalValues;
+
+Value *ProgramASTnode::codegen() { 
   for (auto const &ext : Extern_list)
     ext->codegen();
   for (auto const &decl : Decl_list)
     decl->codegen();
-}
-
-
-
-
-Value *BinExpressionASTnode::codegen() {
-  Value *L = LHS->codegen();
-  Value *R = RHS->codegen();
-
-  if (!L || !R)
-    return nullptr;
-
-  //widen both L and R
-  //int and bool are of the same level and float is above them
-
-
-
-  switch(Op) {
-    case AND:
-      return Builder.CreateAnd(L,R, "andtmp");
-    case OR:
-      return Builder.CreateOr(L,R, "ortmp");
-    case EQ:
-      
-    case PLUS:
-      return Builder.CreateBinOp(Instruction::BinaryOps::Add, L, R, "addtmp");
-      //or if float
-    case MINUS:
-      return Builder.CreateBinOp(Instruction::BinaryOps::Sub, L, R, "subtmp");
-    case ASTERIX:
-      return Builder.CreateBinOp(Instruction::BinaryOps::Mul, L, R, "multmp");
-    
-
-  }
+  return nullptr;
 }
 
 Value *FuncProto::codegen() {
+  this->codegenF();
+
+  return nullptr;
+}
+
+Function *FuncProto::codegenF() {
   std::vector<llvm::Type*> VectorParams;
   for (auto const &param : Params) {
     auto type = typeToLLVM(param->getType());
@@ -1213,6 +1199,180 @@ Value *FuncProto::codegen() {
 
 
 
+
+
+//CHANGE THE FORMAT OF THE FUNCTION CALLS TO USE THE KALEIDOSCOPE VERSION somehow implement functionprotos map
+Value *DeclarationASTnode::codegen() {
+  if (Var_decl)
+    Var_decl->codegen();
+  if (Fun_decl)
+    Fun_decl->codegen();
+  return nullptr;
+}
+
+Value *BinExpressionASTnode::codegen() {
+  Value *L = LHS->codegen();
+  Value *R = RHS->codegen();
+
+  if (!L || !R)
+    return nullptr;
+
+  auto max_type = max(L,R);
+
+  if (!max_type)
+    return nullptr;
+  
+  L = widen(L,L->getType(),max_type);
+  R = widen(R,R->getType(),max_type);
+
+  bool isFloat = (max_type == Type::getFloatTy(TheContext));
+  bool isInt = (max_type == Type::getInt32Ty(TheContext));
+  switch(Op) {
+    case AND:
+      Builder.CreateAnd(L,R,"andtmp");
+    case OR: 
+      return Builder.CreateOr(L,R, "ortmp");
+    case EQ:
+      if (isFloat)
+        return Builder.CreateFCmpOEQ(L,R,"eqtmp");
+      return Builder.CreateICmpEQ(L,R,"eqtmp");
+    case NE:
+      if (isFloat)
+        return Builder.CreateFCmpONE(L,R,"netmp");
+      return Builder.CreateFCmpONE(L,R,"netmp");
+    case LE:
+      if (isFloat)
+        return Builder.CreateFCmpOLE(L,R,"letmp");
+      return Builder.CreateICmpSLE(L,R,"letmp");
+    case LT:
+      if (isFloat)
+        return Builder.CreateFCmpOLT(L,R,"lttmp");
+      return Builder.CreateICmpSLT(L,R,"lttmp");
+    case GE:
+      if (isFloat)
+        return Builder.CreateFCmpOGE(L,R,"getmp");
+      return Builder.CreateICmpSGE(L,R,"getmp");
+    case GT:
+      if (isFloat)
+        return Builder.CreateFCmpOGT(L,R,"gttmp");
+      return Builder.CreateICmpSGT(L,R, "gttmp");
+    case PLUS:
+      if (isFloat)
+        return Builder.CreateFAdd(L,R,"faddtmp");
+      return Builder.CreateAdd(L,R,"addtmp");
+    case MINUS:
+      if (isFloat)
+        return Builder.CreateFSub(L,R,"fsubtmp");
+      return Builder.CreateSub(L,R,"subtmp");
+    case ASTERIX:
+      if (isFloat)
+        return Builder.CreateFMul(L,R,"fmultmp");
+      return Builder.CreateMul(L,R,"multmp");
+    case DIV: //assume divisor 0 is undefined need to handle. NEED TO HANDLE
+      if (isFloat)
+        return Builder.CreateFDiv(L,R,"fdivtmp");
+      else if (isInt)
+        return Builder.CreateSDiv(L,R,"sdivtmp");
+      return Builder.CreateUDiv(L,R,"udivtmp");
+    case MOD: //if the divisor is 0 this leads to undefined behaviour //NEED TO HANDLE
+      if (isFloat)
+        return Builder.CreateFRem(L,R,"fmodtmp");
+      else if (isInt)
+        return Builder.CreateSRem(L,R,"smodtmp");
+      return Builder.CreateURem(L,R,"umodtmp");
+    default:
+      return LogErrorV("invalid binary operator");
+  }
+}
+
+
+Value *VariableCallASTnode::codegen() {
+  Value *V = NamedValues[Ident];
+  if (!V)
+    V = GlobalValues[Ident];
+  
+  if (!V)
+    LogErrorV("Unknown variable name :" + Ident);
+  
+  return Builder.CreateLoad(V, Ident.c_str());
+}
+
+Value *VariableDeclarationASTnode::codegen() {
+  //maybe add oldbindings 
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+  
+  if (!Builder.GetInsertBlock()) {
+    std::cerr << "creating global variable" << std::endl;
+  } else {
+    Value *InitVal;
+    switch (Type) {
+    case FLOAT_TOK:
+      InitVal = ConstantFP::get(TheContext, APFloat(0.0f));
+      break;
+    case INT_TOK:
+      InitVal = ConstantInt::get(TheContext, APInt(32, 0, true));
+      break;
+    case BOOL_TOK:
+      InitVal = ConstantInt::get(TheContext, APInt(1, 0, false));
+      break;
+    default:
+      break;
+  }
+  AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Identifier, typeToLLVM(Type));
+  Builder.CreateStore(InitVal, Alloca);
+
+  //maybe old bindings some time
+
+  NamedValues[Identifier] = Alloca;
+  }
+  return nullptr;
+
+}
+
+Value *FunctionCallASTnode::codegen() {
+  Function *CalleeF = TheModule->getFunction(Name);
+
+  if (!CalleeF)
+    return LogErrorV("Unknown function referenced");
+  
+  if (CalleeF->arg_size() != Args.size())
+    return LogErrorV("Incorrect # arguments passed");
+  
+  std::vector<Value *> ArgsV;
+  for (auto const &arg : Args) {
+    ArgsV.push_back(arg->codegen());
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+Value *FunctionDeclarationASTnode::codegen() {
+  Function *TheFunction = TheModule->getFunction(Proto->getName());
+
+  if (!TheFunction)
+    TheFunction = Proto->codegenF();
+
+  if (!TheFunction) 
+    return nullptr;
+  
+  BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
+  Builder.SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args()) {
+    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction,Arg.getName().str(),Arg.getType());
+    Builder.CreateStore(&Arg, Alloca);
+
+    NamedValues[Arg.getName().str()] = Alloca;
+  }
+
+  Block->codegen(); //maybe change this function return ttype from valyue to functio and include retval part in llvm cp 7
+
+  return nullptr;
+}
+
 Value *FloatASTnode::codegen() {
   return ConstantFP::get(TheContext, APFloat(Val));
 }
@@ -1225,14 +1385,206 @@ Value *BoolASTnode::codegen() {
   return ConstantInt::get(TheContext, APInt(1, Val, false));
 }
 
+Value *ExpressionASTnode::codegen() {
+ if (Rval) { //can be binop(DONE), literal(DONE), function call(DONE), unary(TODO), variable call(DONE)
+   return Rval->codegen();
+ }
+
+  Value *Val = Assign->codegen();
+  if (!Val)
+    return nullptr;
+  
+  AllocaInst *Variable = NamedValues[LHS];
+  if (!Variable) {
+    auto globalVar = GlobalValues[LHS];
+    if (!globalVar)
+      return LogErrorV(LHS + "is undefined");
+    
+    //REMOVE THIS BEFORE SUBMISSION MAYBE THERE IS A TYPE CONVERSION NEEDED HERE IF PROGRAM DOESNT WORK
+  }
+  Builder.CreateStore(Val, Variable);
+  return Val;
+}
+
+Value *UnaryOperatorASTnode::codegen() {
+  Value *E = Element->codegen(); // function call, variable call, literla, unary , itself
+
+  if (!E)
+    return nullptr;
+  
+  switch(PrefixOp) {
+    case NOT:
+      return Builder.CreateNot(E, "nottmp");
+    case MINUS:
+      if (E->getType() == Type::getFloatTy(TheContext))
+        return Builder.CreateFNeg(E, "fnegtmp");
+      return Builder.CreateNeg(E, "negtmp");
+    default:
+      return LogErrorV("Unexpected unary operator expected - or !");
+  }
+
+  return nullptr;
+}
+
+Value *IfStatementASTnode::codegen() {
+  Value *CondV = Expr->codegen();
+  if (!CondV)
+    return nullptr;
+
+  //get if statement working first then convert to another
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *ThenBB = BasicBlock::Create(TheContext, "then", TheFunction);
+  BasicBlock *MergeBB = BasicBlock::Create(TheContext, "ifcont", TheFunction);
+
+  if (Else->hasElse()) {
+    BasicBlock *ElseBB = BasicBlock::Create(TheContext, "else", TheFunction);
+    Builder.CreateCondBr(CondV, ThenBB, ElseBB);
+
+    //THEN
+    Builder.SetInsertPoint(ThenBB);
+    Value *ThenV = Block->codegen();
+    Builder.CreateBr(MergeBB);
+    ThenBB = Builder.GetInsertBlock();
+
+    //ELSE
+    Builder.SetInsertPoint(ElseBB);
+    Value *ElseV = Else->codegen();
+    Builder.CreateBr(MergeBB);
+    ElseBB = Builder.GetInsertBlock();
+
+  } else { //no else section
+    Builder.CreateCondBr(CondV, ThenBB,MergeBB);
+
+    //THEN
+    Builder.SetInsertPoint(ThenBB);
+    Value *ThenV = Block->codegen();
+    ThenBB = Builder.GetInsertBlock();
+
+  }
+
+  Builder.SetInsertPoint(MergeBB);
+    //leave scope checking for now
+  return nullptr;
+}
+
+Value *BlockASTnode::codegen() {
+
+
+  for (auto const &decl : LocalDecls) 
+    decl->codegen();
+  for (auto const &stmt : Stmt_list) {
+    stmt->codegen();
+  }
+    
+
+  return nullptr;
+}
+
+Value *ExpressionStatementASTnode::codegen() {
+  if (!Colon)
+    Expr->codegen();
+
+  return nullptr;
+}
+
+Value *StatementASTnode::codegen() {
+  if (If_stmt) {
+    If_stmt->codegen();
+  }
+  else if (Return_stmt) {
+    Return_stmt->codegen();
+  }
+  else if (While_stmt) {
+    While_stmt->codegen();
+  }
+  else if (Expr_stmt) {
+    Expr_stmt->codegen();
+  }
+  else if (Block) {
+    Block->codegen();
+  }
+
+  return nullptr;
+}
+
+//going to need to understand this and rewrite it
+Value *ReturnStatementASTnode::codegen() {
+
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+  if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) {
+    auto ret = Expr->codegen();
+    Builder.CreateRet(ret);
+    return ret;
+  }
+  Builder.CreateRet(nullptr);
+  return nullptr;
+
+}
+
+
+Value *WhileStatementASTnode::codegen() {
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+  BasicBlock *HeaderBB = BasicBlock::Create(TheContext, "header", TheFunction);
+  BasicBlock *BodyBB = BasicBlock::Create(TheContext, "body", TheFunction);
+  BasicBlock *EndBB = BasicBlock::Create(TheContext, "end", TheFunction);
+
+  Builder.CreateBr(HeaderBB);
+
+  //HEADER
+  Builder.SetInsertPoint(HeaderBB);
+  Value *CondV = Expr->codegen();
+
+  Builder.CreateCondBr(CondV, BodyBB, EndBB);
+
+  //BODY
+  Builder.SetInsertPoint(BodyBB);
+  Stmt->codegen();
+  BodyBB = Builder.GetInsertBlock();
+  Builder.CreateBr(HeaderBB);
+
+  //END
+  Builder.SetInsertPoint(EndBB);
+
+  return nullptr;
+}
 
 //===----------------------------------------------------------------------===//
 // Utility Functions for code gen
 //===----------------------------------------------------------------------===//
+Value *LogErrorV(std::string Str) { //CHANGE THIS
+  std::cerr << "Str" << std::endl;
+  exit(true);
+  return nullptr;
+}
 
+//widen(v,t,w) generates type conversions if needed to widen contents
+//of v of type t into value of type w. returns v if t=w. 
 Value *widen(Value *V, Type *T, Type *Widen) {
+  if (T == Widen)
+    return V;
+  else if (T == Type::getInt32Ty(TheContext) && Widen == Type::getFloatTy(TheContext))
+    return Builder.CreateSIToFP(V, Type::getFloatTy(TheContext), "castfloat");
+  else if (T == Type::getInt1Ty(TheContext) && Widen == Type::getFloatTy(TheContext))
+    return Builder.CreateUIToFP(V, Type::getFloatTy(TheContext), "castfloat");
+  else if (T == Type::getInt1Ty(TheContext) && Widen == Type::getInt32Ty(TheContext))
+    return Builder.CreateIntCast(V, Type::getInt32Ty(TheContext), true, "castint");
+  else
+    LogErrorV("Type cast not valid");
   
-
+  return nullptr;
+  /*possitble pairs of values (which differentiate) and their max are
+  i f = f
+  f i = f
+  i b = i
+  b i = i
+  f b = f
+  b f = f
+  Therefore if widen is a float other variable is either int/bool and if 
+  widen is an int then other variable must be a bool these are the only cases
+  to handle.*/
 }
 
 
@@ -1244,8 +1596,14 @@ Type *max(Value *L, Value *R) {
   auto l = L->getType();
   auto r = R->getType();
 
+  if ((l != Type::getFloatTy(TheContext) && l != Type::getInt32Ty(TheContext)
+  && l != Type::getInt1Ty(TheContext)) || (r != Type::getFloatTy(TheContext) 
+  && r != Type::getInt32Ty(TheContext) && r != Type::getInt1Ty(TheContext)))
+    return nullptr;
+  //if any type is not in heirarchy return error;
+
   /*if either is a float then max in float 
-  if reached else if both are either int32 or int1 if there is an
+  if reached elseif both are either int32 or int1 if there is an
   int32 it is int32 else they are both int1 if they are equal just return 
   any of l or r.*/
   if (l != r) {
@@ -1293,9 +1651,9 @@ llvm::Type *typeToLLVM(int Type) {
   }
 }
 
-static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, int Type) {
+static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type) {
   IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());  
-  return TmpB.CreateAlloca(typeToLLVM(Type),0,Varname.c_str());
+  return TmpB.CreateAlloca(Type,0,Varname.c_str());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1335,6 +1693,8 @@ int main(int argc, char **argv) {
   auto program = parser();
   std::cout << program->to_string(0) << std::endl;
   fprintf(stderr, "Parsing Finished\n");
+  
+  program->codegen();
 
   TheModule->print(llvm::errs(), nullptr);
   //********************* Start printing final IR **************************
