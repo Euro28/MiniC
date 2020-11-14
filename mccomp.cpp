@@ -1239,7 +1239,7 @@ Value *BinExpressionASTnode::codegen() {
     case NE:
       if (isFloat)
         return Builder.CreateFCmpONE(L,R,"netmp");
-      return Builder.CreateFCmpONE(L,R,"netmp");
+      return Builder.CreateICmpNE(L,R,"netmp");
     case LE:
       if (isFloat)
         return Builder.CreateFCmpOLE(L,R,"letmp");
@@ -1288,9 +1288,9 @@ Value *BinExpressionASTnode::codegen() {
 
 Value *VariableCallASTnode::codegen() {
   Value *V = NamedValues[Ident];
-  if (!V)
+  if (!V) 
     V = GlobalValues[Ident];
-  
+    
   if (!V)
     LogErrorV("Unknown variable name :" + Ident);
   
@@ -1300,9 +1300,31 @@ Value *VariableCallASTnode::codegen() {
 Value *VariableDeclarationASTnode::codegen() {
   //maybe add oldbindings 
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
-  
+  //https://stackoverflow.com/questions/7787308/how-can-i-declare-a-global-variable-in-llvm
   if (!Builder.GetInsertBlock()) {
-    std::cerr << "creating global variable" << std::endl;
+    //create global variable
+    TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
+    GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
+    gVar->setLinkage(GlobalValue::CommonLinkage);
+    gVar->setAlignment((llvm::MaybeAlign)4);
+
+//https://stackoverflow.com/questions/23328832/llvm-initialize-an-integer-global-variable-with-value-0
+    
+    
+    if (typeToLLVM(Type) == Type::getFloatTy(TheContext)) {
+      ConstantFP* const_fp_val = ConstantFP::get(TheContext, APFloat(0.0f));
+      gVar->setInitializer(const_fp_val);
+    } else if (typeToLLVM(Type) == Type::getInt32Ty(TheContext)) {
+      ConstantInt* const_int_val = ConstantInt::get(TheContext, APInt(32,0,true));
+      gVar->setInitializer(const_int_val);
+    } else if (typeToLLVM(Type) == Type::getInt1Ty(TheContext)) {
+      ConstantInt* const_bool_val = ConstantInt::get(TheContext, APInt(1,0,false));
+      gVar->setInitializer(const_bool_val);
+    }
+
+
+    GlobalValues[Identifier] = gVar;
+    return gVar;
   } else {
     Value *InitVal;
     switch (Type) {
@@ -1400,7 +1422,8 @@ Value *ExpressionASTnode::codegen() {
     if (!globalVar)
       return LogErrorV(LHS + "is undefined");
     
-    //REMOVE THIS BEFORE SUBMISSION MAYBE THERE IS A TYPE CONVERSION NEEDED HERE IF PROGRAM DOESNT WORK
+    Builder.CreateStore(Val, globalVar);
+    return Val;
   }
   Builder.CreateStore(Val, Variable);
   return Val;
@@ -1514,10 +1537,17 @@ Value *ReturnStatementASTnode::codegen() {
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
   if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) {
+
     auto ret = Expr->codegen();
+
+    if (ret->getType() != TheFunction->getReturnType()) {
+      //error message when type doesnt match C will implicit cast
+    }
+
     Builder.CreateRet(ret);
     return ret;
   }
+  
   Builder.CreateRet(nullptr);
   return nullptr;
 
@@ -1634,7 +1664,6 @@ FunctionType *getFunctionType(int Type, std::vector<llvm::Type*> Param) {
       return nullptr;
   }
 }
-
 
 //given a type returns a llvm type
 llvm::Type *typeToLLVM(int Type) {
