@@ -3,7 +3,7 @@
 #include "parser.h"
 
 //===----------------------------------------------------------------------===//
-// AST nodes - to_string for AST output (putting them all in one place makes it easier to tailor)
+// AST nodes - put function constructors and function definitions here
 //===----------------------------------------------------------------------===//
 
 ProgramASTnode::ProgramASTnode(std::vector<std::unique_ptr<FuncProto>> extern_list,
@@ -80,6 +80,21 @@ StatementASTnode::StatementASTnode(std::unique_ptr<WhileStatementASTnode> while_
   : While_stmt(std::move(while_stmt)) {} 
 
 
+ExpressionStatementASTnode::ExpressionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr)
+  : Expr(std::move(expr)), Colon(false) {}
+ExpressionStatementASTnode::ExpressionStatementASTnode(bool colon)
+  : Colon(colon) {}
+
+DeclarationASTnode::DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl)
+  : Var_decl(std::move(var_decl)) {}
+DeclarationASTnode::DeclarationASTnode(std::unique_ptr<FunctionDeclarationASTnode> fun_decl)
+  : Fun_decl(std::move(fun_decl)) {}
+std::unique_ptr<VariableDeclarationASTnode> DeclarationASTnode::getVarDecl() {return std::move(Var_decl);}
+std::unique_ptr<FunctionDeclarationASTnode> DeclarationASTnode::getFunDecl() {return std::move(Fun_decl);}
+
+//===----------------------------------------------------------------------===//
+// AST nodes (to_string) - put in one place to make it easier to form AST
+//===----------------------------------------------------------------------===//
 
 std::string ProgramASTnode::to_string(int level) const {
   std::stringstream ss;
@@ -117,7 +132,6 @@ std::string FuncProto::to_string(int level) const {
   return ss.str();
 
 }
-
 
 std::string DeclarationASTnode::to_string(int level) const {
   std::stringstream ss;
@@ -171,6 +185,7 @@ std::string StatementASTnode::to_string(int level) const {
   else if (Block) {
     return Block->to_string(level);
   }
+  return "";
 }
 
 std::string ReturnStatementASTnode::to_string(int level) const {
@@ -214,7 +229,6 @@ std::string ExpressionASTnode::to_string(int level) const {
     return ss.str();
 }
 
-
 std::string VariableCallASTnode::to_string(int level) const {
   std::stringstream ss;
   ss << indent(level) << "|-VarCall " << Ident << std::endl;
@@ -241,7 +255,6 @@ std::string BinExpressionASTnode::to_string(int level) const {
   return ss.str();
 }
 
-
 std::string UnaryOperatorASTnode::to_string(int level) const {
   std::stringstream ss;
 
@@ -250,7 +263,6 @@ std::string UnaryOperatorASTnode::to_string(int level) const {
 
   return ss.str();
 }
-
 
 std::string FloatASTnode::to_string(int level) const {
   std::stringstream ss;
@@ -278,12 +290,14 @@ std::string WhileStatementASTnode::to_string(int level) const {
   return ss.str();
 }
 
-
-
-
 //===----------------------------------------------------------------------===//
 // Recursive Descent Parser - Function call for each production
 //===----------------------------------------------------------------------===//
+//NOTE THE PREDICT SETS ARE THE FIRST+ SETS SPECIFIED IN THE LECTURES.
+//TAKE note when ever we are checking the result of a parse like say auto block = ParseBlock()
+//if (!block) return nullptr is ok as any error messages would be output in ParseBlock() and execution exited
+//as the cw spec says the first error found is sufficient.
+
 
 void LogError(TOKEN tok, const std::string &Str) {
 
@@ -303,25 +317,12 @@ std::vector<std::unique_ptr<T>> LogErrorVector(TOKEN tok, const std::string &Str
   return {};
 }
 
-//If you simply use Curtok.type == x 
-//whenever that fails you need a specific error output
-//this prevents replication of that error output.
-bool match(int match) {
-  if (CurTok.type == match) 
-    return true;
-  std::string result = "Expected ";
-  result += type_to_string(match);
-
-  LogError(CurTok,result);
-}
-
-
 // program ::= extern_list decl_list
 //          | decl_list
 std::unique_ptr<ProgramASTnode> ParseProgram() {
   if (CurTok.type == EXTERN) { //PREDICT(program ::= extern_list decl_list) = {extern}
-    auto extern_list = ParseExternList(); //should return a vector
-    auto decl_list = ParseDeclList(); //should be a vector
+    auto extern_list = ParseExternList(); 
+    auto decl_list = ParseDeclList(); 
     return std::make_unique<ProgramASTnode>(std::move(extern_list),std::move(decl_list));
   } 
   else if (CurTok.type == INT_TOK || CurTok.type == VOID_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) {
@@ -335,9 +336,9 @@ std::unique_ptr<ProgramASTnode> ParseProgram() {
 
 // extern_list ::= extern extern_list'
 std::vector<std::unique_ptr<FuncProto>> ParseExternList() {
-  getNextToken(); //eat extern (we know its extern as we only execute ParseExternList() if Curtok.type == Extern)
+  getNextToken(); //eat extern 
 
-  auto proto = ParseProto();
+  auto proto = ParseProto(); //eat type_spec IDENT "(" params ")"
 
   if (CurTok.type != SC)
     return LogErrorVector<FuncProto>(CurTok,"Expected ;");
@@ -350,18 +351,18 @@ std::vector<std::unique_ptr<FuncProto>> ParseExternList() {
     return std::move(extern_list_prime);
   }
 
-  return {}; //change to error message
+  return {}; 
 }
 
-//extern_list' ::= extern extern_list' | epsilon
+//extern_list' ::= extern extern_list' | ε
 std::vector<std::unique_ptr<FuncProto>> ParseExternListPrime() {
   std::vector<std::unique_ptr<FuncProto>> extern_list;
   
   if (CurTok.type == EXTERN) {
-    auto extern_list_prime = ParseExternList();
+    auto extern_list_prime = ParseExternList(); //eat extern extern_list'
     return std::move(extern_list_prime);
   } else if (CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK || CurTok.type == INT_TOK || CurTok.type == VOID_TOK) {
-    return extern_list;
+    return extern_list; //extern_list' ::= ε
   }
   return LogErrorVector<FuncProto>(CurTok, "Expected one of extern, float, int, void, bool"); 
 }
@@ -471,10 +472,10 @@ std::unique_ptr<ParameterASTnode> ParseParam() {
 std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclList() { //change format so you are adding single to returned prime list 
   std::vector<std::unique_ptr<DeclarationASTnode>> decl_list;
 
-  auto decl = ParseDecl();
+  auto decl = ParseDecl(); //eat decl
 
   if (decl) {
-    auto decl_list_prime = ParseDeclListPrime();
+    auto decl_list_prime = ParseDeclListPrime(); //eat decl_list'
     decl_list_prime.insert(decl_list_prime.begin(), std::move(decl));
     return std::move(decl_list_prime);
   }
@@ -487,8 +488,8 @@ std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
   if (CurTok.type == EOF_TOK) { //PREDICT(decl_list_prime ::= epsilon) = {EOF}
     return {};
   } 
-  else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //decl_list_prime ::= decl decl_list_prime
-    auto decl_list = ParseDeclList();
+  else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //decl_list' ::= decl decl_list'
+    auto decl_list = ParseDeclList(); //eat decl decl_list'
     return std::move(decl_list);
   } else return LogErrorVector<DeclarationASTnode>(CurTok, "Expected one of eof, void, int float, bool");
 }
@@ -504,7 +505,7 @@ std::unique_ptr<DeclarationASTnode> ParseDecl() {
     if (var_decl)
       return std::make_unique<DeclarationASTnode>(std::move(var_decl));
   }
-  else if (lookahead_2.type == LPAR) { //function declaration
+  else if (lookahead_2.type == LPAR) { //decl ::= func_decl
     auto fun_decl = ParseFunDecl();
     if (fun_decl)
       return std::make_unique<DeclarationASTnode>(std::move(fun_decl));
@@ -513,8 +514,7 @@ std::unique_ptr<DeclarationASTnode> ParseDecl() {
   //if lookahead 2 is not ; or ( we know its wrong but a syntax error might occur earlier
   //and we should return that error message instead
   auto type = ParseTypeSpec(); //eat type
-  if (!type)
-    return nullptr;
+  
   if (CurTok.type != IDENT)
     LogErrorPtr<DeclarationASTnode>(CurTok,"Expected an identifier");
 
@@ -544,14 +544,14 @@ std::unique_ptr<VariableDeclarationASTnode> ParseVarDecl() {
 
 //fun_decl ::= type_spec IDENT "(" params ")" block
 std::unique_ptr<FunctionDeclarationASTnode> ParseFunDecl() {
-  auto proto = ParseProto();
+  auto proto = ParseProto(); //eat type_spec IDENT "(" params ")"
 
   if (!proto)
     return nullptr;
 
-  auto block = ParseBlock();
+  auto block = ParseBlock(); //eat block
 
-  if (!block) //error message already displayed in ParseBlock();
+  if (!block) 
     return nullptr;
 
   return std::make_unique<FunctionDeclarationASTnode>(std::move(proto), std::move(block));
@@ -564,8 +564,8 @@ std::unique_ptr<BlockASTnode> ParseBlock() {
 
   getNextToken(); //eat {
 
-  auto local_decls = ParseLocalDecls();
-  auto stmt_list = ParseStmtList();
+  auto local_decls = ParseLocalDecls(); //eat local_decls
+  auto stmt_list = ParseStmtList(); //eat stmt_list
   
   if (CurTok.type != RBRA)
     return LogErrorPtr<BlockASTnode>(CurTok,"Expected }");
@@ -594,6 +594,8 @@ std::vector<std::unique_ptr<VariableDeclarationASTnode>> ParseLocalDeclsPrime() 
       return std::move(decl_list_prime);
     }
   } else return LogErrorVector<VariableDeclarationASTnode>(CurTok, "Expected one of { ; if while return identifier - ! ( int_lit float_lit bool_lit }");
+
+  return {};
 }
 
 //local_decls ::= local_decls'
@@ -623,9 +625,11 @@ std::vector<std::unique_ptr<StatementASTnode>> ParseStmtListPrime() {
       return std::move(stmt_list_prime);
     }
   }
-  else if (CurTok.type == RBRA) {
+  else if (CurTok.type == RBRA) { //stmt_list' ::= ε
     return std::move(stmt_list);
   } else return LogErrorVector<StatementASTnode>(CurTok, "Expected one of { ; if while return ident - ! ( int_lit float_lit bool_lit");
+
+  return {};
 }
 
 //stmt ::= expr_stmt | block | if_stmt | while_stmt | return_stmt
@@ -659,6 +663,8 @@ std::unique_ptr<StatementASTnode> ParseStmt() {
     if (return_stmt)
       return std::make_unique<StatementASTnode>(std::move(return_stmt));
   } else return LogErrorPtr<StatementASTnode>(CurTok, "Expected { if, while, return or stat of expression statement");
+
+  return nullptr;
 }
 
 //expr ::= IDENT "=" expr | rval
@@ -680,7 +686,7 @@ std::unique_ptr<ExpressionASTnode> ParseExpr() {
     return std::make_unique<ExpressionASTnode>(std::move(expr),ident);
   }
   else {
-    auto rval = ParseRval();
+    auto rval = ParseRval(); //expr ::= rval
     if (!rval)
       return nullptr;
 
@@ -974,7 +980,7 @@ std::unique_ptr<ASTnode> ParseFactor() {
     auto factor_prime = ParseFactorPrime(std::move(element));
     return factor_prime;
   }
-  //return nullptr;
+  return nullptr;
 }
 
 /*factor' ::= "*" element factor'
@@ -1022,10 +1028,13 @@ std::unique_ptr<ASTnode> ParseElement() {
     getNextToken(); // eat ident
     getNextToken(); // eat (
     auto args = ParseArgs();
-    if (match(RPAR)) {
-      getNextToken(); //eat )
-      return std::make_unique<FunctionCallASTnode>(ident, std::move(args));
-    }
+
+    if (CurTok.type != RPAR)
+      return LogErrorPtr<ASTnode>(CurTok, "Expected ) ");
+
+    getNextToken(); //eat )
+    return std::make_unique<FunctionCallASTnode>(ident, std::move(args));
+    
     
   } 
   else if (CurTok.type == IDENT) { 
@@ -1128,7 +1137,6 @@ TOKEN lookahead(int ahead) {
     tokens[i] = CurTok;
     getNextToken();
   }
-
   TOKEN lookahead = CurTok;
   putBackToken(lookahead);
 
@@ -1151,12 +1159,18 @@ std::string indent(int level) {
 //===----------------------------------------------------------------------===//
 // Code Generation
 //===----------------------------------------------------------------------===//
+
+//codgen is basically the to_string for the most part but except writing strings to output the information
+//we are using the information to generate IR, but general control flow of codegen of ASTnodes is exactly like to_string.
 Value *LogErrorV(std::string Str);
 FunctionType *getFunctionType(int Type, std::vector<llvm::Type*> Param);
 llvm::Type *typeToLLVM(int Type);
 Type *max(Value *L, Value *R);
 Value *widen(Value *V, Type *T, Type *Widen);
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type);
+bool checkZero(Value *R);
+bool checkFloatZero(Value *R);
+
 
 static LLVMContext TheContext;
 std::unique_ptr<Module> TheModule;
@@ -1165,6 +1179,8 @@ static IRBuilder<> Builder(TheContext);
 static std::map<std::string, AllocaInst *> NamedValues;
 static std::map<std::string, GlobalValue *> GlobalValues;
 
+
+//gen the entire program
 Value *ProgramASTnode::codegen() { 
   for (auto const &ext : Extern_list)
     ext->codegen();
@@ -1173,12 +1189,14 @@ Value *ProgramASTnode::codegen() {
   return nullptr;
 }
 
+//Function is not covariant of Value so it needs to call it.
 Value *FuncProto::codegen() {
   this->codegenF();
 
   return nullptr;
 }
 
+//codegen function proto 
 Function *FuncProto::codegenF() {
   std::vector<llvm::Type*> VectorParams;
   for (auto const &param : Params) {
@@ -1197,11 +1215,7 @@ Function *FuncProto::codegenF() {
   return F;
 }
 
-
-
-
-
-//CHANGE THE FORMAT OF THE FUNCTION CALLS TO USE THE KALEIDOSCOPE VERSION somehow implement functionprotos map
+//codegen declaration
 Value *DeclarationASTnode::codegen() {
   if (Var_decl)
     Var_decl->codegen();
@@ -1210,13 +1224,15 @@ Value *DeclarationASTnode::codegen() {
   return nullptr;
 }
 
+//codegen bin expression
 Value *BinExpressionASTnode::codegen() {
   Value *L = LHS->codegen();
   Value *R = RHS->codegen();
 
   if (!L || !R)
     return nullptr;
-
+  //Taken from dragon book find max type in hierarchy and convert both values to that type
+  //check function definitions for more info
   auto max_type = max(L,R);
 
   if (!max_type)
@@ -1224,6 +1240,7 @@ Value *BinExpressionASTnode::codegen() {
   
   L = widen(L,L->getType(),max_type);
   R = widen(R,R->getType(),max_type);
+
 
   bool isFloat = (max_type == Type::getFloatTy(TheContext));
   bool isInt = (max_type == Type::getInt32Ty(TheContext));
@@ -1268,15 +1285,25 @@ Value *BinExpressionASTnode::codegen() {
       if (isFloat)
         return Builder.CreateFMul(L,R,"fmultmp");
       return Builder.CreateMul(L,R,"multmp");
-    case DIV: //assume divisor 0 is undefined need to handle. NEED TO HANDLE
-      if (isFloat)
+    case DIV: // divisor 0 is undefined behaviour stated in lang ref
+      if (isFloat) {
+        if (checkFloatZero(R))
+          LogErrorV("divisor is 0");
         return Builder.CreateFDiv(L,R,"fdivtmp");
+      }
+      if (checkZero(R))
+        LogErrorV("divisor is 0");
       else if (isInt)
         return Builder.CreateSDiv(L,R,"sdivtmp");
       return Builder.CreateUDiv(L,R,"udivtmp");
-    case MOD: //if the divisor is 0 this leads to undefined behaviour //NEED TO HANDLE
-      if (isFloat)
+    case MOD: //divisor 0 is undefined behaviour stated in lang ref
+      if (isFloat) {
+        if (checkFloatZero(R))
+          LogErrorV("divisor is 0");
         return Builder.CreateFRem(L,R,"fmodtmp");
+      }
+      if (checkZero(R))
+        LogErrorV("divisor is 0");
       else if (isInt)
         return Builder.CreateSRem(L,R,"smodtmp");
       return Builder.CreateURem(L,R,"umodtmp");
@@ -1285,7 +1312,7 @@ Value *BinExpressionASTnode::codegen() {
   }
 }
 
-
+//if variable called load value
 Value *VariableCallASTnode::codegen() {
   Value *V = NamedValues[Ident];
   if (!V) 
@@ -1298,18 +1325,15 @@ Value *VariableCallASTnode::codegen() {
 }
 
 Value *VariableDeclarationASTnode::codegen() {
-  //maybe add oldbindings 
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
-  //https://stackoverflow.com/questions/7787308/how-can-i-declare-a-global-variable-in-llvm
   if (!Builder.GetInsertBlock()) {
     //create global variable
+
     TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
     GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
     gVar->setLinkage(GlobalValue::CommonLinkage);
     gVar->setAlignment((llvm::MaybeAlign)4);
 
-//https://stackoverflow.com/questions/23328832/llvm-initialize-an-integer-global-variable-with-value-0
-    
     
     if (typeToLLVM(Type) == Type::getFloatTy(TheContext)) {
       ConstantFP* const_fp_val = ConstantFP::get(TheContext, APFloat(0.0f));
@@ -1326,6 +1350,8 @@ Value *VariableDeclarationASTnode::codegen() {
     GlobalValues[Identifier] = gVar;
     return gVar;
   } else {
+
+    //declare local variable, create value then alloca it
     Value *InitVal;
     switch (Type) {
     case FLOAT_TOK:
@@ -1343,14 +1369,13 @@ Value *VariableDeclarationASTnode::codegen() {
   AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Identifier, typeToLLVM(Type));
   Builder.CreateStore(InitVal, Alloca);
 
-  //maybe old bindings some time
-
   NamedValues[Identifier] = Alloca;
   }
   return nullptr;
 
 }
 
+//create call to function
 Value *FunctionCallASTnode::codegen() {
   Function *CalleeF = TheModule->getFunction(Name);
 
@@ -1370,6 +1395,7 @@ Value *FunctionCallASTnode::codegen() {
   return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+//function declaration
 Value *FunctionDeclarationASTnode::codegen() {
   Function *TheFunction = TheModule->getFunction(Proto->getName());
 
@@ -1382,6 +1408,7 @@ Value *FunctionDeclarationASTnode::codegen() {
   BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
   Builder.SetInsertPoint(BB);
 
+  //for each argument create an alloca
   NamedValues.clear();
   for (auto &Arg : TheFunction->args()) {
     AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction,Arg.getName().str(),Arg.getType());
@@ -1407,12 +1434,13 @@ Value *BoolASTnode::codegen() {
   return ConstantInt::get(TheContext, APInt(1, Val, false));
 }
 
+
 Value *ExpressionASTnode::codegen() {
- if (Rval) { //can be binop(DONE), literal(DONE), function call(DONE), unary(TODO), variable call(DONE)
+ if (Rval) { //can be binop, literal, function call, unary, variable call
    return Rval->codegen();
  }
 
-  Value *Val = Assign->codegen();
+  Value *Val = Assign->codegen(); //codegen the RHS
   if (!Val)
     return nullptr;
   
@@ -1422,10 +1450,10 @@ Value *ExpressionASTnode::codegen() {
     if (!globalVar)
       return LogErrorV(LHS + "is undefined");
     
-    Builder.CreateStore(Val, globalVar);
+    Builder.CreateStore(Val, globalVar); //store RHS into global variable
     return Val;
   }
-  Builder.CreateStore(Val, Variable);
+  Builder.CreateStore(Val, Variable); //store RHS into local variable
   return Val;
 }
 
@@ -1454,7 +1482,6 @@ Value *IfStatementASTnode::codegen() {
   if (!CondV)
     return nullptr;
 
-  //get if statement working first then convert to another
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
   BasicBlock *ThenBB = BasicBlock::Create(TheContext, "then", TheFunction);
@@ -1531,18 +1558,16 @@ Value *StatementASTnode::codegen() {
   return nullptr;
 }
 
-//going to need to understand this and rewrite it
 Value *ReturnStatementASTnode::codegen() {
 
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
-  if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) {
+  if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) { //if there is a value to return and 
 
     auto ret = Expr->codegen();
 
-    if (ret->getType() != TheFunction->getReturnType()) {
-      //error message when type doesnt match C will implicit cast
-    }
+    if (ret->getType() != TheFunction->getReturnType())
+      LogErrorV("Return type does not match function type");
 
     Builder.CreateRet(ret);
     return ret;
@@ -1584,11 +1609,31 @@ Value *WhileStatementASTnode::codegen() {
 //===----------------------------------------------------------------------===//
 // Utility Functions for code gen
 //===----------------------------------------------------------------------===//
-Value *LogErrorV(std::string Str) { //CHANGE THIS
-  std::cerr << "Str" << std::endl;
+Value *LogErrorV(std::string Str) { 
+  std::cerr << Str << std::endl;
   exit(true);
   return nullptr;
 }
+
+
+//given a Value* that we know is either a float or an int check if it is 0
+bool checkZero(Value *Divisor) {
+  if (ConstantInt* constInt = dyn_cast<ConstantInt>(Divisor)) {
+    if (constInt->getBitWidth() == 32) {
+      return (constInt->getSExtValue() == APInt(32,0,true));
+    } else if (constInt->getBitWidth() == 1) {
+      return (constInt->getSExtValue() == APInt(1,0,false));
+    }
+  }
+  return false;
+}
+
+bool checkFloatZero(Value *Divisor) {
+  if (ConstantFP* constFloat = dyn_cast<ConstantFP>(Divisor)) 
+    return (constFloat->getValue() ==  APFloat(0.0f));
+  return false;
+}
+
 
 //widen(v,t,w) generates type conversions if needed to widen contents
 //of v of type t into value of type w. returns v if t=w. 
@@ -1628,8 +1673,10 @@ Type *max(Value *L, Value *R) {
 
   if ((l != Type::getFloatTy(TheContext) && l != Type::getInt32Ty(TheContext)
   && l != Type::getInt1Ty(TheContext)) || (r != Type::getFloatTy(TheContext) 
-  && r != Type::getInt32Ty(TheContext) && r != Type::getInt1Ty(TheContext)))
-    return nullptr;
+  && r != Type::getInt32Ty(TheContext) && r != Type::getInt1Ty(TheContext))) {
+    LogErrorV("Type specified is not int, float or bool");
+  }
+    
   //if any type is not in heirarchy return error;
 
   /*if either is a float then max in float 
@@ -1650,6 +1697,7 @@ Type *max(Value *L, Value *R) {
 
 }
 
+//given a integer type return llvm functiontype
 FunctionType *getFunctionType(int Type, std::vector<llvm::Type*> Param) {
   switch(Type) {
     case VOID_TOK:
@@ -1712,8 +1760,6 @@ int main(int argc, char **argv) {
   // initialize line number and column numbers to zero
   lineNo = 1;
   columnNo = 1;
-
-  fprintf(stderr, "Lexer Finished\n");
 
   // Make the module, which holds all the code.
   TheModule = std::make_unique<Module>("mini-c", TheContext);

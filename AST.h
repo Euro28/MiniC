@@ -43,7 +43,7 @@ class ParameterASTnode : public ASTnode {
   std::string Ident;
 
 public:
-  virtual Value *codegen() override {};
+  Value *codegen() override {return nullptr;}
   ParameterASTnode(int type, const std::string &ident);
   int getType();
   std::string getIdent();

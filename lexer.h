@@ -102,10 +102,8 @@ const char* type_to_string(int type) {
     case ELSE: return "else";
     case WHILE: return "while";
     case RETURN: return "return";
-
-  
-
   }
+  return "";
 }
 
 // TOKEN struct is used to keep track of information about a token
