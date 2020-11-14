@@ -160,6 +160,7 @@ public:
   std::string to_string(int level) const override;
 };
 
+//BinExpressionASTnode - class for binary expressions left associative
 class BinExpressionASTnode : public ASTnode {
   int Op;
   std::unique_ptr<ASTnode> LHS, RHS;
@@ -170,6 +171,7 @@ public:
   Value *codegen() override;
 };
 
+//UnaryOperatorASTnode - class for unary values
 class UnaryOperatorASTnode : public ASTnode {
   int PrefixOp;
   std::unique_ptr<ASTnode> Element; //can be one of ident, function call, int, float, bool lit
@@ -180,6 +182,7 @@ public:
   Value *codegen() override;
 };
 
+//BlockASTnode - vector of local decls followed by vector of statements
 class BlockASTnode : public ASTnode {
   std::vector<std::unique_ptr<VariableDeclarationASTnode>> LocalDecls;
   std::vector<std::unique_ptr<StatementASTnode>> Stmt_list;
@@ -196,7 +199,7 @@ public:
 
 };
 
-
+//WhileStatementASTnode - class that holds information for while loop
 class WhileStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
   std::unique_ptr<StatementASTnode> Stmt;
@@ -207,6 +210,7 @@ public:
   std::string to_string(int level) const override;
 };
 
+//IfStatementASTNode - clas that holds information for if statement
 class IfStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
   std::unique_ptr<BlockASTnode> Block;
@@ -219,6 +223,7 @@ public:
   std::string to_string(int level) const override;
 };
 
+//ReturnStatementASTNode - class that holds information for return statement
 class ReturnStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
 
@@ -229,27 +234,20 @@ public:
   std::string to_string(int level) const override;
 };
 
-
-
-
-
-//inline constructors and function definitions
+//ExpressionSTatementASTnode - either colon or expression
 class ExpressionStatementASTnode : public ASTnode {
   std::unique_ptr<ExpressionASTnode> Expr;
   bool Colon;
 
 public: 
-  ExpressionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr) 
-  : Expr(std::move(expr)), Colon(false) {}
-
-  ExpressionStatementASTnode(bool colon) : Colon(colon) {}
-
+  ExpressionStatementASTnode(std::unique_ptr<ExpressionASTnode> expr);
+  ExpressionStatementASTnode(bool colon);
   std::string to_string(int level) const override;
-
   Value *codegen() override;
 };
+
+//StatementASTnode - can be an expr_stmt, if, while, block, or return stmt
 class StatementASTnode : public ASTnode {
-  //this is either an expr_stmt, if, while, block, or return stmt
   std::unique_ptr<IfStatementASTnode> If_stmt;
   std::unique_ptr<BlockASTnode> Block;
   std::unique_ptr<ExpressionStatementASTnode> Expr_stmt;
@@ -265,6 +263,8 @@ public:
   std::string to_string(int level) const override;
   Value *codegen() override;
 };
+
+//DeclarationASTnode - can be either func or var declaration
 class DeclarationASTnode : public ASTnode {
   std::unique_ptr<VariableDeclarationASTnode> Var_decl;
   std::unique_ptr<FunctionDeclarationASTnode> Fun_decl;
@@ -272,20 +272,11 @@ class DeclarationASTnode : public ASTnode {
 public:
   Value *codegen() override;
 
-  DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl) 
-  : Var_decl(std::move(var_decl)) {}
+  DeclarationASTnode(std::unique_ptr<VariableDeclarationASTnode> var_decl);
+  DeclarationASTnode(std::unique_ptr<FunctionDeclarationASTnode> fun_decl);
 
-  std::unique_ptr<VariableDeclarationASTnode> getVarDecl() {
-    return std::move(Var_decl);
-  }
-
-  DeclarationASTnode(std::unique_ptr<FunctionDeclarationASTnode> fun_decl)
-  : Fun_decl(std::move(fun_decl)) {}
-
-  std::unique_ptr<FunctionDeclarationASTnode> getFunDecl() {
-    return std::move(Fun_decl);
-  }
-
+  std::unique_ptr<FunctionDeclarationASTnode> getFunDecl();
+  std::unique_ptr<VariableDeclarationASTnode> getVarDecl();
   std::string to_string(int level) const override;
 };
 
