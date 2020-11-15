@@ -331,7 +331,11 @@ std::unique_ptr<ProgramASTnode> ParseProgram() {
 
     std::vector<std::unique_ptr<FuncProto>> extern_list = {};
     return std::make_unique<ProgramASTnode>(std::move(extern_list), std::move(decl_list)); 
-  } else return LogErrorPtr<ProgramASTnode>(CurTok, "Expected one of extern, int, void, float, bool"); //start of program must be one of listed
+  } else  {
+    std::stringstream errMsg;
+    errMsg << "Unknown type name: '" << CurTok.lexeme.c_str() << "'";
+    return LogErrorPtr<ProgramASTnode>(CurTok, errMsg.str()); //start of program must be one of listed
+  }
 }
 
 // extern_list ::= extern extern_list'
@@ -364,7 +368,10 @@ std::vector<std::unique_ptr<FuncProto>> ParseExternListPrime() {
   } else if (CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK || CurTok.type == INT_TOK || CurTok.type == VOID_TOK) {
     return extern_list; //extern_list' ::= ε
   }
-  return LogErrorVector<FuncProto>(CurTok, "Expected one of extern, float, int, void, bool"); 
+
+  std::stringstream errMsg; 
+  errMsg << "Unknown type name: '" << CurTok.lexeme.c_str() << "'";
+  return LogErrorVector<FuncProto>(CurTok, errMsg.str()); 
 }
 
 //Function prototype used in function definition and as an extern
@@ -425,7 +432,7 @@ std::vector<std::unique_ptr<ParameterASTnode>> ParseParams() {
       return std::move(param_list);
   }
 
-  return LogErrorVector<ParameterASTnode>(CurTok, "Expected on of void, int, bool, float or )");
+  return LogErrorVector<ParameterASTnode>(CurTok, "Expected Type or )");
 }
 
 //param_list ::= param param_list'
@@ -491,7 +498,7 @@ std::vector<std::unique_ptr<DeclarationASTnode>> ParseDeclListPrime() {
   else if (CurTok.type == VOID_TOK || CurTok.type == INT_TOK || CurTok.type == FLOAT_TOK || CurTok.type == BOOL_TOK) { //decl_list' ::= decl decl_list'
     auto decl_list = ParseDeclList(); //eat decl decl_list'
     return std::move(decl_list);
-  } else return LogErrorVector<DeclarationASTnode>(CurTok, "Expected one of eof, void, int float, bool");
+  } else return LogErrorVector<DeclarationASTnode>(CurTok, "Expected Type or EOF");
 }
 
 // decl ::= var_decl | fun_decl
@@ -593,7 +600,7 @@ std::vector<std::unique_ptr<VariableDeclarationASTnode>> ParseLocalDeclsPrime() 
       decl_list_prime.insert(decl_list_prime.begin(), std::move(decl));
       return std::move(decl_list_prime);
     }
-  } else return LogErrorVector<VariableDeclarationASTnode>(CurTok, "Expected one of { ; if while return identifier - ! ( int_lit float_lit bool_lit }");
+  } else return LogErrorVector<VariableDeclarationASTnode>(CurTok, "Expected Expression (local declaration or statement)");
 
   return {};
 }
@@ -627,7 +634,7 @@ std::vector<std::unique_ptr<StatementASTnode>> ParseStmtListPrime() {
   }
   else if (CurTok.type == RBRA) { //stmt_list' ::= ε
     return std::move(stmt_list);
-  } else return LogErrorVector<StatementASTnode>(CurTok, "Expected one of { ; if while return ident - ! ( int_lit float_lit bool_lit");
+  } else return LogErrorVector<StatementASTnode>(CurTok, "Expected Expression (statement)");
 
   return {};
 }
@@ -662,7 +669,7 @@ std::unique_ptr<StatementASTnode> ParseStmt() {
     auto return_stmt = ParseReturnStmt();
     if (return_stmt)
       return std::make_unique<StatementASTnode>(std::move(return_stmt));
-  } else return LogErrorPtr<StatementASTnode>(CurTok, "Expected { if, while, return or stat of expression statement");
+  } else return LogErrorPtr<StatementASTnode>(CurTok, "Expected Statement");
 
   return nullptr;
 }
@@ -763,7 +770,7 @@ std::unique_ptr<BlockASTnode> ParseElseStmt() {
   || CurTok.type == RBRA ) { //FOLLOW(if_stmt)
     
     return std::make_unique<BlockASTnode>();
-  } else return LogErrorPtr<BlockASTnode>(CurTok, "Expected one of 'else','{', ';', if, while, return , identifier, '-', '!', '(', int_lit, float_lit, bool_lit, '}'");
+  } else return LogErrorPtr<BlockASTnode>(CurTok, "Expected Expression");
 }
 
 //while_stmt ::= "while" "(" expr ")" stmt
@@ -814,9 +821,9 @@ std::unique_ptr<ReturnStatementASTnode> ParseReturnStmt() {
       getNextToken(); //eat ;
       return std::make_unique<ReturnStatementASTnode>(std::move(expr));
 
-   } else return LogErrorPtr<ReturnStatementASTnode>(CurTok, "Expected one of ; ident - ! ( int_lit float_lit bool_lit");
+   } else return LogErrorPtr<ReturnStatementASTnode>(CurTok, "Expected ; or an Expression");
   }
-  return nullptr;
+  return LogErrorPtr<ReturnStatementASTnode>(CurTok, "Expected Return");
 }
 
 //rval ::= term rval'
@@ -842,7 +849,7 @@ std::unique_ptr<ASTnode> ParseRvalPrime(std::unique_ptr<ASTnode> term1) {
   } else if (CurTok.type == SC || CurTok.type == RPAR ||
   CurTok.type == COMMA) { //PREDICT(rval_prime -> ε) = {';', ')', ','}
     return term1;
-  } else return LogErrorPtr<BinExpressionASTnode>(CurTok,"Expected one of '||', ';', ')', ','");
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");
 
   return nullptr;
 }
@@ -870,7 +877,7 @@ std::unique_ptr<ASTnode> ParseTermPrime(std::unique_ptr<ASTnode> equiv1) {
   } else if (CurTok.type == OR || CurTok.type == SC ||
   CurTok.type == RPAR || CurTok.type == COMMA) { //PREDICT(term_prime ::= ε) = {'||', ';', ')', ','}
     return equiv1;
-  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '&&', '||',';', ')', ','");
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");
 
   return nullptr;
 }
@@ -900,7 +907,7 @@ std::unique_ptr<ASTnode> ParseEquivPrime(std::unique_ptr<ASTnode> rel1) {
   else if (CurTok.type == OR || CurTok.type == AND || CurTok.type == SC
   || CurTok.type == RPAR || CurTok.type == COMMA) { //PREDICT(equiv_prime ::= ε) = {'||', '&&', ';', ')', ','}
     return rel1;
-  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '==','!=', '&&', '||',';', ')', ','");
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");;
 
   return nullptr;
 }
@@ -937,7 +944,7 @@ std::unique_ptr<ASTnode> ParseRelPrime(std::unique_ptr<ASTnode> subexpr1) {
   || CurTok.type == AND || CurTok.type == SC|| CurTok.type == RPAR 
   || CurTok.type == COMMA) { //PREDICT(rel_prime ::= ε) = {'==', '!=', '||', '&&', ';', ')', ','}
     return subexpr1;
-  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");
 
   return nullptr;
 }
@@ -968,7 +975,7 @@ std::unique_ptr<ASTnode> ParseSubExprPrime(std::unique_ptr<ASTnode> factor1) {
   || CurTok.type == EQ || CurTok.type == NE || CurTok.type == OR || CurTok.type == AND 
   || CurTok.type == SC|| CurTok.type == RPAR || CurTok.type == COMMA) {
     return factor1;
-  } else return LogErrorPtr<BinExpressionASTnode>(CurTok, "Expected one of '+','-','<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");
 
   return nullptr;
 }
@@ -1004,8 +1011,8 @@ std::unique_ptr<ASTnode> ParseFactorPrime(std::unique_ptr<ASTnode> element1) {
   CurTok.type == NE || CurTok.type == OR || CurTok.type == AND || CurTok.type == SC
   || CurTok.type == RPAR || CurTok.type == COMMA) {
     return std::move(element1);
-  } else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '*','/','%', '+','-','<','<=', '>', '>=','==','!=', '&&', '||',';', ')', ','");
-
+  } else return LogErrorPtr<ASTnode>(CurTok, "Expected ; after expression");
+    //this is the clang output
   return nullptr;
 }
 
@@ -1075,7 +1082,7 @@ std::unique_ptr<ASTnode> ParseElement() {
       getNextToken(); // eat )
       return std::move(expr);
     }
-  }else return LogErrorPtr<ASTnode>(CurTok, "Expected one of '-','!', '(', identifier, int_lit, float_lit, bool_lit");
+  }else return LogErrorPtr<ASTnode>(CurTok, "Expected Expression");
   return nullptr;
 }
 
@@ -1308,7 +1315,7 @@ Value *BinExpressionASTnode::codegen() {
         return Builder.CreateSRem(L,R,"smodtmp");
       return Builder.CreateURem(L,R,"umodtmp");
     default:
-      return LogErrorV("invalid binary operator");
+      return LogErrorV("invalid binary operator " + type_to_string(Op));
   }
 }
 
@@ -1471,7 +1478,7 @@ Value *UnaryOperatorASTnode::codegen() {
         return Builder.CreateFNeg(E, "fnegtmp");
       return Builder.CreateNeg(E, "negtmp");
     default:
-      return LogErrorV("Unexpected unary operator expected - or !");
+      return LogErrorV("Unexpected unary operator '"+ type_to_string(PrefixOp) +"' expected - or !");
   }
 
   return nullptr;
@@ -1565,9 +1572,9 @@ Value *ReturnStatementASTnode::codegen() {
   if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) { //if there is a value to return and 
 
     auto ret = Expr->codegen();
-
+    
     if (ret->getType() != TheFunction->getReturnType())
-      LogErrorV("Return type does not match function type");
+      LogErrorV("Return type does not match function type in '" + TheFunction->getName().str() + "'");
 
     Builder.CreateRet(ret);
     return ret;

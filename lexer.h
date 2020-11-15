@@ -69,7 +69,7 @@ enum TOKEN_TYPE {
   INVALID = -100 // signal invalid token
 };
 
-const char* type_to_string(int type) {
+const std::string type_to_string(int type) {
   switch(type) {
     case INT_TOK: return "int";
     case VOID_TOK: return "void";
