@@ -1177,7 +1177,10 @@ Value *widen(Value *V, Type *T, Type *Widen);
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type);
 bool checkZero(Value *R);
 bool checkFloatZero(Value *R);
-
+std::map<std::string, AllocaInst *> removeLocal(
+  std::map<std::string, AllocaInst *> Old,
+  std::map<std::string, AllocaInst *> New
+);
 
 static LLVMContext TheContext;
 std::unique_ptr<Module> TheModule;
@@ -1339,7 +1342,7 @@ Value *VariableDeclarationASTnode::codegen() {
     TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
     GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
     gVar->setLinkage(GlobalValue::CommonLinkage);
-    gVar->setAlignment((llvm::MaybeAlign)4);
+    
 
     
     if (typeToLLVM(Type) == Type::getFloatTy(TheContext)) {
@@ -1604,7 +1607,7 @@ Value *WhileStatementASTnode::codegen() {
   //BODY
   Builder.SetInsertPoint(BodyBB);
   Stmt->codegen();
-  BodyBB = Builder.GetInsertBlock();
+  //BodyBB = Builder.GetInsertBlock();
   Builder.CreateBr(HeaderBB);
 
   //END
@@ -1739,6 +1742,24 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::stri
   IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());  
   return TmpB.CreateAlloca(Type,0,Varname.c_str());
 }
+
+
+//old is the map of local variables before entering scope
+//new is map of local variables after exiting scope
+//in the executed scope local variables can be created, these are removed
+//any updates to local variables are retained however.
+std::map<std::string, AllocaInst *> removeLocal(
+  std::map<std::string, AllocaInst *> Old,
+  std::map<std::string, AllocaInst *> New
+) {
+  for (auto const & newVar : New) {
+    if (Old[newVar.first]) { 
+      Old[newVar.first] = newVar.second;
+    }
+  }
+  return Old;
+}
+
 
 //===----------------------------------------------------------------------===//
 // AST Printer
