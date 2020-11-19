@@ -1582,8 +1582,11 @@ Value *ReturnStatementASTnode::codegen() {
     Builder.CreateRet(ret);
     return ret;
   }
+  //if you are a non void function that just returns there will be an error here
+  //as return type for return; is void. Fix this by type casting void retunr value
+  //to function type
   
-  Builder.CreateRet(nullptr);
+  Builder.CreateRet(Constant::get());
   return nullptr;
 
 }
@@ -1640,7 +1643,7 @@ bool checkZero(Value *Divisor) {
 
 bool checkFloatZero(Value *Divisor) {
   if (ConstantFP* constFloat = dyn_cast<ConstantFP>(Divisor)) 
-    return (constFloat->getValue() ==  APFloat(0.0f));
+    return (constFloat->isZero());
   return false;
 }
 
