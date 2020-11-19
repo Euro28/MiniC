@@ -1,12 +1,9 @@
 // MiniC program to test addition
-extern int print_int(int X); //never ensured identifier must follow int/bool/float
-
-
+extern int print_int(int X);
 
 int addition(int n, int m){
 	int result;
 	result = n + m;
-
   
 
   if(n == 4) {
