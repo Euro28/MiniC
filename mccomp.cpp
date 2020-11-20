@@ -1338,6 +1338,8 @@ Value *VariableDeclarationASTnode::codegen() {
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
   if (!Builder.GetInsertBlock()) {
     //create global variable
+	if (GlobalValues[Identifier])
+		LogErrorV("Already Declared Global Variable: "+Identifier);
 
     TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
     GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
@@ -1586,7 +1588,7 @@ Value *ReturnStatementASTnode::codegen() {
   //as return type for return; is void. Fix this by type casting void retunr value
   //to function type
   
-  Builder.CreateRet(Constant::get());
+  Builder.CreateRet(nullptr);
   return nullptr;
 
 }
