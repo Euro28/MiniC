@@ -1177,7 +1177,10 @@ Value *widen(Value *V, Type *T, Type *Widen);
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type);
 bool checkZero(Value *R);
 bool checkFloatZero(Value *R);
-
+static void enter_scope();
+static void exit_scope();
+static void add_symbol();
+static AllocaInst* get_symbol(std::string Var);
 
 static LLVMContext TheContext;
 std::unique_ptr<Module> TheModule;
@@ -1322,7 +1325,7 @@ Value *BinExpressionASTnode::codegen() {
 
 //if variable called load value 
 Value *VariableCallASTnode::codegen() {
-  Value *V = NamedValues[Ident];
+  Value *V = get_symbol(Ident);
   if (!V) 
     V = GlobalValues[Ident];
     
@@ -1379,7 +1382,8 @@ Value *VariableDeclarationASTnode::codegen() {
   AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Identifier, typeToLLVM(Type));
   Builder.CreateStore(InitVal, Alloca);
 
-  NamedValues[Identifier] = Alloca;
+  add_symbol(Alloca, Identifier);
+  //NamedValues[Identifier] = Alloca;
   }
   return nullptr;
 
@@ -1419,7 +1423,8 @@ Value *FunctionDeclarationASTnode::codegen() {
   Builder.SetInsertPoint(BB);
 
   //for each argument create an alloca
-  NamedValues.clear();
+  //NamedValues.clear();
+  enter_scope();
   for (auto &Arg : TheFunction->args()) {
     AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction,Arg.getName().str(),Arg.getType());
     Builder.CreateStore(&Arg, Alloca);
@@ -1428,7 +1433,7 @@ Value *FunctionDeclarationASTnode::codegen() {
   }
 
   Block->codegen(); //maybe change this function return ttype from valyue to functio and include retval part in llvm cp 7
-
+  exit_scope();
   return nullptr;
 }
 
@@ -1454,7 +1459,8 @@ Value *ExpressionASTnode::codegen() {
   if (!Val)
     return nullptr;
   
-  AllocaInst *Variable = NamedValues[LHS];
+  //AllocaInst *Variable = NamedValues[LHS];
+  AllocaInst *Variable = get_symbol(LHS);
   if (!Variable) {
     auto globalVar = GlobalValues[LHS];
     if (!globalVar)
@@ -1489,7 +1495,7 @@ Value *UnaryOperatorASTnode::codegen() {
 
 //scope entry
 Value *IfStatementASTnode::codegen() {
-  std::map<std::string, AllocaInst *> OldBindings = NamedValues;
+  
   Value *CondV = Expr->codegen();
   if (!CondV)
     return nullptr;
@@ -1750,20 +1756,28 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::stri
 
 //enter scope so add hash table to head of linked list
 static void enter_scope() {
-
+  std::map<std::string, AllocaInst *> NamedValues;
+  SymbolTable.push_front(NamedValues);
 }
 
 //exit scope so remove hash table at head of linked list
 static void exit_scope() {
-
+  SymbolTable.pop_front();
 }
 //add symbol to symbol table at head of linked list
-static void add_symbol(AllocaInst *A) {
-
+static void add_symbol(AllocaInst *A, std::string Ident) {
+  SymbolTable.front()[Ident] = A;
 }
 
 //search linkedlist of symbol table for variable with name Var
-static void get_symbol(std::string Var) {
+static AllocaInst* get_symbol(std::string Var) {
+  for (auto const &symbolT : SymbolTable) {
+    auto V = symbolT.find(Var);
+    if (V->second)
+      return V->second;
+  }
+
+  return nullptr;
 
 }
 
