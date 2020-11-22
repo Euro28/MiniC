@@ -1230,8 +1230,12 @@ Function *FuncProto::codegenF() {
 Value *DeclarationASTnode::codegen() {
   if (Var_decl)
     Var_decl->codegen();
-  if (Fun_decl)
+  if (Fun_decl) {
+    enter_scope();
     Fun_decl->codegen();
+    exit_scope();
+  }
+    
   return nullptr;
 }
 
@@ -1251,7 +1255,6 @@ Value *BinExpressionASTnode::codegen() {
   
   L = widen(L,L->getType(),max_type);
   R = widen(R,R->getType(),max_type);
-
 
   bool isFloat = (max_type == Type::getFloatTy(TheContext));
   bool isInt = (max_type == Type::getInt32Ty(TheContext));
@@ -1363,7 +1366,7 @@ Value *VariableDeclarationASTnode::codegen() {
     GlobalValues[Identifier] = gVar;
     return gVar;
   } else {
-
+    std::cerr << "declaring local variable" << std::endl;
     //declare local variable, create value then alloca it
     Value *InitVal;
     switch (Type) {
@@ -1424,16 +1427,15 @@ Value *FunctionDeclarationASTnode::codegen() {
 
   //for each argument create an alloca
   //NamedValues.clear();
-  enter_scope();
   for (auto &Arg : TheFunction->args()) {
     AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction,Arg.getName().str(),Arg.getType());
     Builder.CreateStore(&Arg, Alloca);
 
-    NamedValues[Arg.getName().str()] = Alloca;
+    //NamedValues[Arg.getName().str()] = Alloca;
+    add_symbol(Alloca, Arg.getName().str());
   }
 
   Block->codegen(); //maybe change this function return ttype from valyue to functio and include retval part in llvm cp 7
-  exit_scope();
   return nullptr;
 }
 
@@ -1460,6 +1462,7 @@ Value *ExpressionASTnode::codegen() {
     return nullptr;
   
   //AllocaInst *Variable = NamedValues[LHS];
+  std::cerr << "calling get_symbol in ExpressionASTnode with LHS = " << LHS << std::endl;
   AllocaInst *Variable = get_symbol(LHS);
   if (!Variable) {
     auto globalVar = GlobalValues[LHS];
@@ -1497,6 +1500,7 @@ Value *UnaryOperatorASTnode::codegen() {
 Value *IfStatementASTnode::codegen() {
   
   Value *CondV = Expr->codegen();
+  std::cerr << "past if expr->codegen" << std::endl;
   if (!CondV)
     return nullptr;
 
@@ -1558,13 +1562,17 @@ Value *ExpressionStatementASTnode::codegen() {
 
 Value *StatementASTnode::codegen() {
   if (If_stmt) {
+    enter_scope();
     If_stmt->codegen();
+    exit_scope();
   }
   else if (Return_stmt) {
     Return_stmt->codegen();
   }
   else if (While_stmt) {
+    enter_scope();
     While_stmt->codegen();
+    exit_scope();
   }
   else if (Expr_stmt) {
     Expr_stmt->codegen();
@@ -1754,10 +1762,19 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::stri
   return TmpB.CreateAlloca(Type,0,Varname.c_str());
 }
 
+/*static std::string printMap(std::map<std::string, AllocaInst *> M) {
+  std::cerr << "Amount of entries in map is " << M.size() << std::endl;
+  for (auto const &entry : M) {
+    std::cerr << entry.first << " is in current symbol table" << std::endl;
+  }
+}*/
+
 //enter scope so add hash table to head of linked list
 static void enter_scope() {
+  //std::cerr << "entered scope symbol table size is " <<  SymbolTable.size() << std::endl;
   std::map<std::string, AllocaInst *> NamedValues;
   SymbolTable.push_front(NamedValues);
+  //std::cerr << "after push front scope symbol table size is " <<  SymbolTable.size() << std::endl;
 }
 
 //exit scope so remove hash table at head of linked list
@@ -1767,18 +1784,21 @@ static void exit_scope() {
 //add symbol to symbol table at head of linked list
 static void add_symbol(AllocaInst *A, std::string Ident) {
   SymbolTable.front()[Ident] = A;
+  //std::cerr << "The symbol table at the head now has " << SymbolTable.front().size() << " elements" << std::endl;
 }
 
 //search linkedlist of symbol table for variable with name Var
 static AllocaInst* get_symbol(std::string Var) {
+  //std::cerr << "calling get symbol" << std::endl;
   for (auto const &symbolT : SymbolTable) {
+    //std::cerr << "the size of symbolT is " << symbolT.size() << std::endl;
     auto V = symbolT.find(Var);
-    if (V->second)
+    if (V != symbolT.end())
       return V->second;
+    //std::cerr << "V->second evaluted to false" << std::endl;
   }
 
   return nullptr;
-
 }
 
 //===----------------------------------------------------------------------===//
