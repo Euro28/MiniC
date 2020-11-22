@@ -1230,7 +1230,7 @@ Function *FuncProto::codegenF() {
 Value *DeclarationASTnode::codegen() {
   if (Var_decl)
     Var_decl->codegen();
-  if (Fun_decl) {
+  if (Fun_decl) { //entering a function is scoped
     enter_scope();
     Fun_decl->codegen();
     exit_scope();
@@ -1328,7 +1328,7 @@ Value *BinExpressionASTnode::codegen() {
 
 //if variable called load value 
 Value *VariableCallASTnode::codegen() {
-  Value *V = get_symbol(Ident);
+  Value *V = get_symbol(Ident); //search hierarchy of symbol tables
   if (!V) 
     V = GlobalValues[Ident];
     
@@ -1366,7 +1366,6 @@ Value *VariableDeclarationASTnode::codegen() {
     GlobalValues[Identifier] = gVar;
     return gVar;
   } else {
-    std::cerr << "declaring local variable" << std::endl;
     //declare local variable, create value then alloca it
     Value *InitVal;
     switch (Type) {
@@ -1385,8 +1384,7 @@ Value *VariableDeclarationASTnode::codegen() {
   AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Identifier, typeToLLVM(Type));
   Builder.CreateStore(InitVal, Alloca);
 
-  add_symbol(Alloca, Identifier);
-  //NamedValues[Identifier] = Alloca;
+  add_symbol(Alloca, Identifier); //add symbol to hierarchy of symbol table
   }
   return nullptr;
 
@@ -1431,8 +1429,7 @@ Value *FunctionDeclarationASTnode::codegen() {
     AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction,Arg.getName().str(),Arg.getType());
     Builder.CreateStore(&Arg, Alloca);
 
-    //NamedValues[Arg.getName().str()] = Alloca;
-    add_symbol(Alloca, Arg.getName().str());
+    add_symbol(Alloca, Arg.getName().str()); //add symbol to hierarchy of symbol tables
   }
 
   Block->codegen(); //maybe change this function return ttype from valyue to functio and include retval part in llvm cp 7
@@ -1461,9 +1458,8 @@ Value *ExpressionASTnode::codegen() {
   if (!Val)
     return nullptr;
   
-  //AllocaInst *Variable = NamedValues[LHS];
-  std::cerr << "calling get_symbol in ExpressionASTnode with LHS = " << LHS << std::endl;
   AllocaInst *Variable = get_symbol(LHS);
+  //get variable on LHS of assign statement
   if (!Variable) {
     auto globalVar = GlobalValues[LHS];
     if (!globalVar)
@@ -1496,11 +1492,10 @@ Value *UnaryOperatorASTnode::codegen() {
   return nullptr;
 }
 
-//scope entry
+
 Value *IfStatementASTnode::codegen() {
   
   Value *CondV = Expr->codegen();
-  std::cerr << "past if expr->codegen" << std::endl;
   if (!CondV)
     return nullptr;
 
@@ -1536,7 +1531,6 @@ Value *IfStatementASTnode::codegen() {
   }
 
   Builder.SetInsertPoint(MergeBB);
-    //leave scope checking for now
   return nullptr;
 }
 
@@ -1560,6 +1554,7 @@ Value *ExpressionStatementASTnode::codegen() {
   return nullptr;
 }
 
+//here set scope for if and while statements
 Value *StatementASTnode::codegen() {
   if (If_stmt) {
     enter_scope();
@@ -1588,7 +1583,7 @@ Value *ReturnStatementASTnode::codegen() {
 
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
-  if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) { //if there is a value to return and 
+  if (Expr && TheFunction->getReturnType() != Type::getVoidTy(TheContext)) { //if there is a value to return. 
 
     auto ret = Expr->codegen();
     
@@ -1598,16 +1593,12 @@ Value *ReturnStatementASTnode::codegen() {
     Builder.CreateRet(ret);
     return ret;
   }
-  //if you are a non void function that just returns there will be an error here
-  //as return type for return; is void. Fix this by type casting void retunr value
-  //to function type
   
   Builder.CreateRet(nullptr);
   return nullptr;
 
 }
 
-///scope entry
 Value *WhileStatementASTnode::codegen() {
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
@@ -1626,7 +1617,7 @@ Value *WhileStatementASTnode::codegen() {
   //BODY
   Builder.SetInsertPoint(BodyBB);
   Stmt->codegen();
-  //BodyBB = Builder.GetInsertBlock();
+  BodyBB = Builder.GetInsertBlock();
   Builder.CreateBr(HeaderBB);
 
   //END
@@ -1762,40 +1753,28 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::stri
   return TmpB.CreateAlloca(Type,0,Varname.c_str());
 }
 
-/*static std::string printMap(std::map<std::string, AllocaInst *> M) {
-  std::cerr << "Amount of entries in map is " << M.size() << std::endl;
-  for (auto const &entry : M) {
-    std::cerr << entry.first << " is in current symbol table" << std::endl;
-  }
-}*/
-
 //enter scope so add hash table to head of linked list
 static void enter_scope() {
-  //std::cerr << "entered scope symbol table size is " <<  SymbolTable.size() << std::endl;
   std::map<std::string, AllocaInst *> NamedValues;
   SymbolTable.push_front(NamedValues);
-  //std::cerr << "after push front scope symbol table size is " <<  SymbolTable.size() << std::endl;
 }
 
 //exit scope so remove hash table at head of linked list
 static void exit_scope() {
   SymbolTable.pop_front();
 }
+
 //add symbol to symbol table at head of linked list
 static void add_symbol(AllocaInst *A, std::string Ident) {
   SymbolTable.front()[Ident] = A;
-  //std::cerr << "The symbol table at the head now has " << SymbolTable.front().size() << " elements" << std::endl;
 }
 
 //search linkedlist of symbol table for variable with name Var
 static AllocaInst* get_symbol(std::string Var) {
-  //std::cerr << "calling get symbol" << std::endl;
   for (auto const &symbolT : SymbolTable) {
-    //std::cerr << "the size of symbolT is " << symbolT.size() << std::endl;
     auto V = symbolT.find(Var);
     if (V != symbolT.end())
       return V->second;
-    //std::cerr << "V->second evaluted to false" << std::endl;
   }
 
   return nullptr;
