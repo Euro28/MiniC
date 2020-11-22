@@ -1638,13 +1638,8 @@ Value *LogErrorV(std::string Str) {
 
 //given a Value* that we know is either a float or an int check if it is 0
 bool checkZero(Value *Divisor) {
-  if (ConstantInt* constInt = dyn_cast<ConstantInt>(Divisor)) {
-    if (constInt->getBitWidth() == 32) {
-      return (constInt->getSExtValue() == APInt(32,0,true));
-    } else if (constInt->getBitWidth() == 1) {
-      return (constInt->getSExtValue() == APInt(1,0,false));
-    }
-  }
+  if (ConstantInt* constInt = dyn_cast<ConstantInt>(Divisor)) 
+      return (constInt->isZero());
   return false;
 }
 
