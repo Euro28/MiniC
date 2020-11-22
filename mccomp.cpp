@@ -1179,7 +1179,7 @@ bool checkZero(Value *R);
 bool checkFloatZero(Value *R);
 static void enter_scope();
 static void exit_scope();
-static void add_symbol();
+static void add_symbol(AllocaInst *A, std::string Ident);
 static AllocaInst* get_symbol(std::string Var);
 
 static LLVMContext TheContext;
