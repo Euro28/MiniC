@@ -1177,10 +1177,7 @@ Value *widen(Value *V, Type *T, Type *Widen);
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::string &Varname, llvm::Type *Type);
 bool checkZero(Value *R);
 bool checkFloatZero(Value *R);
-std::map<std::string, AllocaInst *> removeLocal(
-  std::map<std::string, AllocaInst *> Old,
-  std::map<std::string, AllocaInst *> New
-);
+
 
 static LLVMContext TheContext;
 std::unique_ptr<Module> TheModule;
@@ -1188,6 +1185,7 @@ static IRBuilder<> Builder(TheContext);
 
 static std::map<std::string, AllocaInst *> NamedValues;
 static std::map<std::string, GlobalValue *> GlobalValues;
+static std::list<std::map<std::string, AllocaInst *>> SymbolTable;
 
 
 //gen the entire program
@@ -1322,7 +1320,7 @@ Value *BinExpressionASTnode::codegen() {
   }
 }
 
-//if variable called load value
+//if variable called load value 
 Value *VariableCallASTnode::codegen() {
   Value *V = NamedValues[Ident];
   if (!V) 
@@ -1341,22 +1339,22 @@ Value *VariableDeclarationASTnode::codegen() {
 	if (GlobalValues[Identifier])
 		LogErrorV("Already Declared Global Variable: "+Identifier);
 
-    TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
-    GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
-    gVar->setLinkage(GlobalValue::CommonLinkage);
+  TheModule->getOrInsertGlobal(Identifier, typeToLLVM(Type));
+  GlobalVariable* gVar = TheModule->getNamedGlobal(Identifier);
+  gVar->setLinkage(GlobalValue::CommonLinkage);
     
 
     
-    if (typeToLLVM(Type) == Type::getFloatTy(TheContext)) {
-      ConstantFP* const_fp_val = ConstantFP::get(TheContext, APFloat(0.0f));
-      gVar->setInitializer(const_fp_val);
-    } else if (typeToLLVM(Type) == Type::getInt32Ty(TheContext)) {
-      ConstantInt* const_int_val = ConstantInt::get(TheContext, APInt(32,0,true));
-      gVar->setInitializer(const_int_val);
-    } else if (typeToLLVM(Type) == Type::getInt1Ty(TheContext)) {
-      ConstantInt* const_bool_val = ConstantInt::get(TheContext, APInt(1,0,false));
-      gVar->setInitializer(const_bool_val);
-    }
+  if (typeToLLVM(Type) == Type::getFloatTy(TheContext)) {
+    ConstantFP* const_fp_val = ConstantFP::get(TheContext, APFloat(0.0f));
+    gVar->setInitializer(const_fp_val);
+  } else if (typeToLLVM(Type) == Type::getInt32Ty(TheContext)) {
+    ConstantInt* const_int_val = ConstantInt::get(TheContext, APInt(32,0,true));
+    gVar->setInitializer(const_int_val);
+  } else if (typeToLLVM(Type) == Type::getInt1Ty(TheContext)) {
+    ConstantInt* const_bool_val = ConstantInt::get(TheContext, APInt(1,0,false));
+    gVar->setInitializer(const_bool_val);
+  }
 
 
     GlobalValues[Identifier] = gVar;
@@ -1407,7 +1405,7 @@ Value *FunctionCallASTnode::codegen() {
   return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
-//function declaration
+//function declaration  - scope entry
 Value *FunctionDeclarationASTnode::codegen() {
   Function *TheFunction = TheModule->getFunction(Proto->getName());
 
@@ -1489,7 +1487,9 @@ Value *UnaryOperatorASTnode::codegen() {
   return nullptr;
 }
 
+//scope entry
 Value *IfStatementASTnode::codegen() {
+  std::map<std::string, AllocaInst *> OldBindings = NamedValues;
   Value *CondV = Expr->codegen();
   if (!CondV)
     return nullptr;
@@ -1593,7 +1593,7 @@ Value *ReturnStatementASTnode::codegen() {
 
 }
 
-
+///scope entry
 Value *WhileStatementASTnode::codegen() {
   Function *TheFunction = Builder.GetInsertBlock()->getParent();
 
@@ -1748,23 +1748,24 @@ static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction, const std::stri
   return TmpB.CreateAlloca(Type,0,Varname.c_str());
 }
 
+//enter scope so add hash table to head of linked list
+static void enter_scope() {
 
-//old is the map of local variables before entering scope
-//new is map of local variables after exiting scope
-//in the executed scope local variables can be created, these are removed
-//any updates to local variables are retained however.
-std::map<std::string, AllocaInst *> removeLocal(
-  std::map<std::string, AllocaInst *> Old,
-  std::map<std::string, AllocaInst *> New
-) {
-  for (auto const & newVar : New) {
-    if (Old[newVar.first]) { 
-      Old[newVar.first] = newVar.second;
-    }
-  }
-  return Old;
 }
 
+//exit scope so remove hash table at head of linked list
+static void exit_scope() {
+
+}
+//add symbol to symbol table at head of linked list
+static void add_symbol(AllocaInst *A) {
+
+}
+
+//search linkedlist of symbol table for variable with name Var
+static void get_symbol(std::string Var) {
+
+}
 
 //===----------------------------------------------------------------------===//
 // AST Printer
