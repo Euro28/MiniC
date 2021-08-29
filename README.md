@@ -1,1 +1,7 @@
-[embed]https://github.com/Euro28/MiniC/blob/ee739125a278657da1f2c43a81e9353ff2058e3e/report.pdf[embed]
+![Report](report/0001.jpg)
+![Report](report/0002.jpg)
+![Report](report/0003.jpg)
+![Report](report/0004.jpg)
+![Report](report/0005.jpg)
+![Report](report/0006.jpg)
+![Report](report/0007.jpg)
